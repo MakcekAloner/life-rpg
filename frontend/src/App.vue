@@ -1,11 +1,13 @@
 <template>
   <div id="app">
+    <GlobalNav />
     <router-view />
   </div>
 </template>
 
 <script setup lang="ts">
 import { onMounted } from 'vue';
+import GlobalNav from './components/GlobalNav.vue';
 
 onMounted(() => {
   console.log('Life RPG Frontend initialized');

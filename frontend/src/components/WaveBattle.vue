@@ -4,7 +4,7 @@
       <!-- Header -->
       <div class="wave-header">
         <div class="wave-title-section">
-          <div class="wave-badge">WAVE</div>
+          <div class="wave-badge">ТРЕНИРОВКА</div>
           <h2 class="wave-title">{{ task.title }}</h2>
           <p v-if="task.description" class="wave-description">{{ task.description }}</p>
         </div>
@@ -14,7 +14,7 @@
       <!-- Wave Progress -->
       <div class="wave-progress-section">
         <div class="wave-total-hp">
-          <span class="hp-label">ОБЩИЙ УРОН ВОЛНЕ</span>
+          <span class="hp-label">ОБЩИЙ УРОН ТРЕНИРОВКЕ</span>
           <span class="hp-value">{{ task.wave_damage_dealt || 0 }} / {{ task.wave_total_hp || totalEnemyHp }}</span>
         </div>
         <div class="wave-hp-bar">
@@ -93,34 +93,26 @@
         </div>
       </div>
 
-      <!-- Bulk Actions -->
-      <div class="bulk-actions" v-if="!task.is_completed">
-        <button class="bulk-attack-button" @click="submitAllAttacks" :disabled="isAttacking || attacks.length === 0">
-          <span class="attack-icon">✓</span>
-          <span class="attack-text">ВСЁ ВЫПОЛНЕНО</span>
-        </button>
-      </div>
-
       <!-- Complete Wave Action -->
       <div class="complete-wave-section" v-if="!task.is_completed">
         <div class="complete-wave-hint">
-          Реальная сессия закончена? Зафиксируй результат сейчас.
+          Реальная тренировка закончена? Зафиксируй результат сейчас.
         </div>
         <button class="complete-wave-button" @click="showCompleteConfirm = true" :disabled="isAttacking">
           <span class="complete-icon">🏁</span>
-          <span class="complete-text">ЗАВЕРШИТЬ ВОЛНУ</span>
+          <span class="complete-text">ЗАВЕРШИТЬ ТРЕНИРОВКУ</span>
         </button>
       </div>
 
       <!-- Completion Confirmation -->
       <div v-if="showCompleteConfirm && !task.is_completed" class="confirm-overlay" @click.self="showCompleteConfirm = false">
         <div class="confirm-dialog">
-          <h3 class="confirm-title">Завершить Wave?</h3>
+          <h3 class="confirm-title">Завершить тренировку?</h3>
           <p class="confirm-text">
             Зафиксировать текущий результат: <strong>{{ task.wave_damage_dealt || 0 }} / {{ task.wave_total_hp || totalEnemyHp }} Damage</strong>?
           </p>
           <p class="confirm-subtext">
-            После завершения Wave будет сохранена с этим результатом.
+            После завершения тренировка будет сохранена с этим результатом. Завершённая тренировка — это не обязательно идеальная.
           </p>
           <div class="confirm-actions">
             <button class="confirm-cancel" @click="showCompleteConfirm = false">НАЗАД</button>
@@ -131,8 +123,9 @@
         </div>
       </div>
 
-      <!-- Completed State -->
+      <!-- Training Result Screen -->
       <div v-if="task.is_completed" class="completed-state">
+        <div class="result-title">TRAINING COMPLETE</div>
         <div class="completion-badge" :class="task.wave_status">
           {{ getWaveStatusLabel(task.wave_status) }}
         </div>
@@ -142,12 +135,21 @@
             <span class="stat-value">{{ task.wave_damage_dealt }} / {{ task.wave_total_hp }}</span>
           </div>
           <div class="completion-stat">
-            <span class="stat-label">Процент:</span>
+            <span class="stat-label">Completion:</span>
             <span class="stat-value">{{ task.result_percent }}%</span>
           </div>
           <div class="completion-stat">
-            <span class="stat-label">Уничтожено:</span>
+            <span class="stat-label">Enemies defeated:</span>
             <span class="stat-value">{{ task.enemies_defeated_count }} / {{ enemies.length }}</span>
+          </div>
+        </div>
+        <div class="result-enemies" v-if="enemies.length > 0">
+          <div class="result-enemy" v-for="enemy in enemies" :key="enemy.id">
+            <span class="result-name">{{ enemy.name }}</span>
+            <span class="result-value">
+              {{ enemy.damage_dealt }} / {{ enemy.max_hp }} HP
+              <span v-if="enemy.is_defeated" class="defeated-mark">✓</span>
+            </span>
           </div>
         </div>
         <p class="completion-message">{{ getWaveMessage(task.wave_status) }}</p>
@@ -171,7 +173,6 @@ const enemies = ref<Enemy[]>([]);
 const inputValues = reactive<Record<string, number>>({});
 const isAttacking = ref(false);
 const feedbackMessage = ref('');
-const lastResult = ref<any>(null);
 const task = ref<any>(props.task);
 const showCompleteConfirm = ref(false);
 
@@ -183,23 +184,6 @@ const waveProgressPercent = computed(() => {
   const total = task.value.wave_total_hp || totalEnemyHp.value;
   const damage = task.value.wave_damage_dealt || 0;
   return total > 0 ? Math.round((damage / total) * 100) : 0;
-});
-
-const attacks = computed(() => {
-  const result: any[] = [];
-  for (const enemy of enemies.value) {
-    const value = inputValues[enemy.id];
-    // Allow any entered value, including 0, to be submitted
-    // This supports the philosophy: showing up is still engaging
-    if (value !== undefined && !isNaN(Number(value))) {
-      result.push({
-        enemy_id: enemy.id,
-        actual_value: Number(value),
-        notes: ''
-      });
-    }
-  }
-  return result;
 });
 
 const enemyProgressPercent = (enemy: Enemy) => {
@@ -286,42 +270,6 @@ const attackEnemy = async (enemy: Enemy) => {
   }
 };
 
-const submitAllAttacks = async () => {
-  if (attacks.value.length === 0) return;
-  
-  isAttacking.value = true;
-  feedbackMessage.value = '';
-  lastResult.value = null;
-  
-  try {
-    const response = await enemyApi.attackEnemies(task.value.id, attacks.value);
-    const result = response.data;
-    
-    for (const enemyResult of result.results) {
-      updateEnemyInState(enemyResult.enemy);
-    }
-    
-    task.value.wave_damage_dealt = result.waveTotals.damageDealt;
-    task.value.wave_current_hp = result.waveTotals.currentHp;
-    task.value.wave_total_hp = result.waveTotals.totalHp;
-    task.value.all_enemies_defeated = result.waveTotals.allDefeated;
-    task.value.is_completed = result.waveTotals.allDefeated;
-    
-    showFeedback(`${result.totalWaveDamage} DAMAGE`);
-    lastResult.value = {
-      totalWaveDamage: result.totalWaveDamage,
-      defeatedCount: result.results.filter((r: any) => r.isDefeated).length
-    };
-    
-    emit('updated', { task: task.value, enemies: enemies.value });
-  } catch (err) {
-    console.error('Error attacking all enemies:', err);
-    feedbackMessage.value = 'Ошибка атаки';
-  } finally {
-    isAttacking.value = false;
-  }
-};
-
 const updateEnemyInState = (updatedEnemy: Enemy) => {
   const index = enemies.value.findIndex(e => e.id === updatedEnemy.id);
   if (index !== -1) {
@@ -358,7 +306,7 @@ const completeWave = async () => {
     emit('updated', { task: result.task, enemies: enemies.value });
   } catch (err) {
     console.error('Error completing wave:', err);
-    feedbackMessage.value = 'Ошибка завершения волны';
+    feedbackMessage.value = 'Ошибка завершения тренировки';
   } finally {
     isAttacking.value = false;
   }
@@ -366,19 +314,19 @@ const completeWave = async () => {
 
 const getWaveStatusLabel = (status: string) => {
   switch (status) {
-    case 'missed': return 'WAVE MISSED';
-    case 'complete': return 'WAVE COMPLETE';
-    case 'perfect_clear': return 'PERFECT CLEAR';
-    default: return 'WAVE';
+    case 'missed': return 'TRAINING MISSED';
+    case 'complete': return 'TRAINING COMPLETE';
+    case 'perfect_clear': return 'PERFECT TRAINING';
+    default: return 'TRAINING';
   }
 };
 
 const getWaveMessage = (status: string) => {
   switch (status) {
-    case 'missed': return 'В этот раз бой не состоялся. Следующая Wave — новый шанс.';
-    case 'complete': return 'Отличная работа. Каждый честный прогресс имеет значение.';
-    case 'perfect_clear': return 'Все противники уничтожены! Идеальная сессия.';
-    default: return 'Wave завершена.';
+    case 'missed': return 'В этот раз тренировка не состоялась. Следующая — новый шанс.';
+    case 'complete': return 'Тренировка завершена. Каждый честный прогресс имеет значение.';
+    case 'perfect_clear': return 'Все противники уничтожены! Идеальная тренировка.';
+    default: return 'Тренировка завершена.';
   }
 };
 
@@ -793,6 +741,39 @@ onMounted(() => {
   font-weight: bold;
   font-size: 1.1rem;
 }
+
+.result-title {
+  text-align: center;
+  font-size: 1.4rem;
+  color: #f4e4a4;
+  font-weight: bold;
+  margin-bottom: 10px;
+}
+
+.result-enemies {
+  margin: 20px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 2px solid #4a3c2a;
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.result-enemy {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: rgba(74, 60, 42, 0.3);
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
+.result-name { color: #f4e4a4; }
+.result-value { color: #c9a227; font-weight: bold; }
+.defeated-mark { color: #2ecc71; margin-left: 8px; }
 
 /* Scrollbar styling */
 .wave-battle-modal::-webkit-scrollbar {

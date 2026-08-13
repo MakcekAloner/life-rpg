@@ -3,7 +3,7 @@
     <Breadcrumbs :custom="breadcrumbs" />
     
     <div class="loading-state" v-if="loading">
-      <p>Загрузка волны...</p>
+      <p>Загрузка тренировки...</p>
     </div>
     
     <div class="error-state" v-else-if="error">
@@ -24,7 +24,7 @@
         <div class="section-header">
           <h2 class="section-title">👾 Enemies</h2>
           <button class="btn-add" @click="showWaveBattle = true" v-if="!wave.is_completed">
-            ⚔️ В бой
+            🏁 Начать тренировку
           </button>
         </div>
         
@@ -87,7 +87,7 @@ const breadcrumbs = computed(() => {
   if (character.value) items.push({ label: character.value.name, route: `/character/${character.value.id}` });
   if (campaign.value) items.push({ label: campaign.value.name, route: `/campaign/${campaign.value.id}` });
   if (mission.value) items.push({ label: mission.value.title, route: `/mission/${mission.value.id}` });
-  items.push({ label: wave.value?.title || 'Wave', current: true });
+  items.push({ label: wave.value?.title || 'Тренировка', current: true });
   return items;
 });
 
@@ -115,7 +115,7 @@ const loadWave = async () => {
     }
   } catch (err) {
     console.error('Error loading wave:', err);
-    error.value = 'Ошибка загрузки';
+    error.value = 'Ошибка загрузки тренировки';
   } finally {
     loading.value = false;
   }
