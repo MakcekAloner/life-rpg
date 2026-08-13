@@ -21,7 +21,7 @@
       
       <!-- Current Wave Section -->
       <section class="wave-section">
-        <div class="wave-label">ТРЕНИРОВКА {{ activeWaveIndex + 1 }}</div>
+        <div class="wave-label">ТРЕНИРОВКА {{ sessionNumber }}</div>
         <h2 class="wave-title">{{ activeWave.title }}</h2>
         
         <div class="wave-progress">
@@ -124,6 +124,8 @@ const waves = ref<any[]>([]);
 const activeWave = ref<any>(null);
 const activeWaveIndex = ref(0);
 const activeEnemies = ref<any[]>([]);
+const sessions = ref<any[]>([]);
+const activeSession = ref<any>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const showWaveBattle = ref(false);
@@ -158,8 +160,13 @@ const enemyState = (enemy: any) => {
 
 const ctaLabel = computed(() => {
   if (!activeWave.value) return 'НАЧАТЬ ТРЕНИРОВКУ';
-  if (activeWave.value.wave_damage_dealt > 0) return 'ПРОДОЛЖИТЬ ТРЕНИРОВКУ';
+  if (activeWave.value.wave_damage_dealt > 0) return 'ПРОДОЛЖИТЬ БОЙ';
   return 'НАЧАТЬ ТРЕНИРОВКУ';
+});
+
+const sessionNumber = computed(() => {
+  if (activeSession.value?.session_number) return activeSession.value.session_number;
+  return sessions.value.length + 1;
 });
 
 const loadMission = async () => {
@@ -194,14 +201,22 @@ const loadWaveDetails = async (waveId: string) => {
     const response = await enemyApi.getTaskWithEnemies(waveId);
     activeWave.value = response.data.task;
     activeEnemies.value = response.data.enemies;
+    sessions.value = response.data.sessions || [];
+    activeSession.value = response.data.active_session || null;
   } catch (err) {
     console.error('Error loading wave details:', err);
   }
 };
 
-const openTraining = () => {
+const openTraining = async () => {
   if (!activeWave.value) return;
-  showWaveBattle.value = true;
+  try {
+    await enemyApi.startSession(activeWave.value.id);
+    await loadWaveDetails(activeWave.value.id);
+    showWaveBattle.value = true;
+  } catch (err) {
+    console.error('Error starting training session:', err);
+  }
 };
 
 const continueFromWave = () => {

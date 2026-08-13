@@ -177,6 +177,21 @@ export const updateEnemy = async (req: Request, res: Response) => {
     try {
       await client.query('BEGIN');
       
+      // Ensure active session exists (per-session actuals)
+      const session = await getOrCreateActiveSession(client, enemy.task_id);
+      const actualResult = await client.query('SELECT actual_value FROM enemies WHERE id = $1', [id]);
+      const previousActual = Number(actualResult.rows[0].actual_value);
+      
+      // Recalculate with the real previous actual after session reset
+      const { damage: newPotentialDamage } = calculateDamage(newActual, targetValue, maxHp, measurementType);
+      const { damage: oldPotentialDamage } = calculateDamage(previousActual, targetValue, maxHp, measurementType);
+      let thisAttackDamage = Math.max(0, newPotentialDamage - oldPotentialDamage);
+      const effectiveDamage = Math.min(thisAttackDamage, currentHp);
+      const newDamageDealt = Number(enemy.damage_dealt) + effectiveDamage;
+      const newCurrentHp = Math.max(0, currentHp - effectiveDamage);
+      const isDefeated = newCurrentHp <= 0;
+      const status = getStatus(newDamageDealt, maxHp, isDefeated);
+      
       // Update enemy
       const updateResult = await client.query(
         `UPDATE enemies 
@@ -197,6 +212,16 @@ export const updateEnemy = async (req: Request, res: Response) => {
          (enemy_id, task_id, previous_actual, new_actual, damage_dealt, notes)
          VALUES ($1, $2, $3, $4, $5, $6)`,
         [id, enemy.task_id, previousActual, newActual, effectiveDamage, notes]
+      );
+      
+      // Log this attack to the current training session
+      await client.query(
+        `INSERT INTO training_session_results (session_id, enemy_id, actual_value, damage_dealt)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (session_id, enemy_id) DO UPDATE
+         SET actual_value = EXCLUDED.actual_value,
+             damage_dealt = training_session_results.damage_dealt + EXCLUDED.damage_dealt`,
+        [session.id, id, newActual, effectiveDamage]
       );
       
       // Recalculate task wave totals
@@ -235,6 +260,7 @@ export const attackEnemies = async (req: Request, res: Response) => {
     try {
       await client.query('BEGIN');
       
+      const session = await getOrCreateActiveSession(client, taskId);
       const results: any[] = [];
       let totalWaveDamage = 0;
       
@@ -253,7 +279,10 @@ export const attackEnemies = async (req: Request, res: Response) => {
         }
         
         const enemy = enemyResult.rows[0];
-        const previousActual = Number(enemy.actual_value);
+        
+        // Get current actual value after session reset
+        const actualResult = await client.query('SELECT actual_value FROM enemies WHERE id = $1', [enemyId]);
+        const previousActual = Number(actualResult.rows[0].actual_value);
         const maxHp = Number(enemy.max_hp);
         const currentHp = Number(enemy.current_hp);
         const targetValue = Number(enemy.target_value);
@@ -289,6 +318,16 @@ export const attackEnemies = async (req: Request, res: Response) => {
            (enemy_id, task_id, previous_actual, new_actual, damage_dealt, notes)
            VALUES ($1, $2, $3, $4, $5, $6)`,
           [enemyId, taskId, previousActual, newActual, effectiveDamage, notes]
+        );
+        
+        // Log to training session
+        await client.query(
+          `INSERT INTO training_session_results (session_id, enemy_id, actual_value, damage_dealt)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (session_id, enemy_id) DO UPDATE
+           SET actual_value = EXCLUDED.actual_value,
+               damage_dealt = training_session_results.damage_dealt + EXCLUDED.damage_dealt`,
+          [session.id, enemyId, newActual, effectiveDamage]
         );
         
         results.push({
@@ -361,7 +400,7 @@ async function recalculateTaskWaveTotals(client: any, taskId: string) {
   };
 }
 
-// Get task with all enemies
+// Get task with all enemies and active session
 export const getTaskWithEnemies = async (req: Request, res: Response) => {
   try {
     const { taskId } = req.params;
@@ -383,15 +422,72 @@ export const getTaskWithEnemies = async (req: Request, res: Response) => {
       [taskId]
     );
     
+    const sessionsResult = await pool.query(
+      `SELECT * FROM training_sessions WHERE task_id = $1 ORDER BY started_at`,
+      [taskId]
+    );
+    
+    const activeSession = sessionsResult.rows.find((s: any) => s.status === 'active') 
+      || sessionsResult.rows[sessionsResult.rows.length - 1] 
+      || null;
+    
     res.json({
       task: taskResult.rows[0],
-      enemies: enemiesResult.rows
+      enemies: enemiesResult.rows,
+      sessions: sessionsResult.rows,
+      active_session: activeSession
     });
   } catch (error) {
     console.error('Error fetching task with enemies:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };
+
+// Helper: get or create an active training session for a task
+async function getOrCreateActiveSession(client: any, taskId: string, task: any = null) {
+  const activeSession = await client.query(
+    `SELECT * FROM training_sessions 
+     WHERE task_id = $1 AND status = 'active' 
+     ORDER BY started_at DESC 
+     LIMIT 1`,
+    [taskId]
+  );
+  
+  if (activeSession.rows.length > 0) {
+    return activeSession.rows[0];
+  }
+  
+  // No active session: create a new one
+  const countResult = await client.query(
+    'SELECT COUNT(*)::int as count FROM training_sessions WHERE task_id = $1',
+    [taskId]
+  );
+  const sessionNumber = (countResult.rows[0]?.count || 0) + 1;
+  
+  if (!task) {
+    const taskResult = await client.query('SELECT * FROM tasks WHERE id = $1', [taskId]);
+    task = taskResult.rows[0];
+  }
+  const startingDamage = Number(task?.wave_damage_dealt) || 0;
+  
+  const sessionResult = await client.query(
+    `INSERT INTO training_sessions (task_id, session_number, starting_wave_damage_dealt, status)
+     VALUES ($1, $2, $3, 'active')
+     RETURNING *`,
+    [taskId, sessionNumber, startingDamage]
+  );
+  
+  // Reset enemy actual values for the new session
+  await client.query(
+    `UPDATE enemies 
+     SET actual_value = 0,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE task_id = $1`,
+    [taskId]
+  );
+  
+  return sessionResult.rows[0];
+}
 
 // Start a new training session for a wave
 export const startTrainingSession = async (req: Request, res: Response) => {
@@ -410,7 +506,7 @@ export const startTrainingSession = async (req: Request, res: Response) => {
       
       const task = taskResult.rows[0];
       
-      // Mark any stale active sessions as completed with zero damage
+      // Close any stale active sessions before starting a new one
       await client.query(
         `UPDATE training_sessions 
          SET status = 'completed', total_damage = 0, completed_at = CURRENT_TIMESTAMP
@@ -418,32 +514,21 @@ export const startTrainingSession = async (req: Request, res: Response) => {
         [taskId]
       );
       
-      // Reset enemy actual values for the new session
-      await client.query(
-        `UPDATE enemies 
-         SET actual_value = 0,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE task_id = $1`,
-        [taskId]
-      );
-      
-      const startingDamage = Number(task.wave_damage_dealt) || 0;
-      
-      const sessionResult = await client.query(
-        `INSERT INTO training_sessions (task_id, starting_wave_damage_dealt, status)
-         VALUES ($1, $2, 'active')
-         RETURNING *`,
-        [taskId, startingDamage]
-      );
+      const session = await getOrCreateActiveSession(client, taskId, task);
       
       const enemiesResult = await client.query('SELECT * FROM enemies WHERE task_id = $1', [taskId]);
+      const sessionsResult = await client.query(
+        `SELECT * FROM training_sessions WHERE task_id = $1 ORDER BY started_at`,
+        [taskId]
+      );
       
       await client.query('COMMIT');
       
       res.json({
-        task: { ...task, wave_damage_dealt: startingDamage },
+        task: { ...task, wave_damage_dealt: session.starting_wave_damage_dealt },
         enemies: enemiesResult.rows,
-        session: sessionResult.rows[0]
+        sessions: sessionsResult.rows,
+        session
       });
     } catch (error) {
       await client.query('ROLLBACK');
@@ -491,26 +576,37 @@ export const completeWave = async (req: Request, res: Response) => {
       const damagedCount = enemies.filter((e: any) => e.damage_dealt > 0 && !e.is_defeated).length;
       const allDefeated = defeatedCount === enemies.length && enemies.length > 0;
       
-      // Find or create active session
-      const sessionResult = await client.query(
-        `SELECT * FROM training_sessions WHERE task_id = $1 AND status = 'active' ORDER BY started_at DESC LIMIT 1`,
-        [taskId]
-      );
-      
-      const startingDamage = sessionResult.rows.length > 0 
-        ? Number(sessionResult.rows[0].starting_wave_damage_dealt)
-        : damageDealt;
-      
+      // Find or create active session and calculate session effective damage
+      const session = await getOrCreateActiveSession(client, taskId, task);
+      const startingDamage = Number(session.starting_wave_damage_dealt);
       const sessionDamage = Math.max(0, damageDealt - startingDamage);
       
-      if (sessionResult.rows.length > 0) {
-        await client.query(
-          `UPDATE training_sessions 
-           SET status = 'completed', total_damage = $1, completed_at = CURRENT_TIMESTAMP
-           WHERE id = $2`,
-          [sessionDamage, sessionResult.rows[0].id]
-        );
+      const resultsResult = await client.query(
+        `SELECT r.enemy_id, r.damage_dealt, e.name
+         FROM training_session_results r
+         JOIN enemies e ON r.enemy_id = e.id
+         WHERE r.session_id = $1`,
+        [session.id]
+      );
+      
+      const damageByEnemy: Record<string, { name: string; damage: number }> = {};
+      let totalEffectiveDamage = 0;
+      for (const row of resultsResult.rows) {
+        const key = row.enemy_id as string;
+        damageByEnemy[key] = { name: row.name, damage: Number(row.damage_dealt) };
+        totalEffectiveDamage += Number(row.damage_dealt);
       }
+      
+      await client.query(
+        `UPDATE training_sessions 
+         SET status = 'completed', 
+             total_damage = $1, 
+             total_effective_damage = $2,
+             damage_by_enemy = $3,
+             completed_at = CURRENT_TIMESTAMP
+         WHERE id = $4`,
+        [sessionDamage, totalEffectiveDamage, JSON.stringify(damageByEnemy), session.id]
+      );
       
       // Determine wave status. Wave is only complete if all enemies are defeated.
       let waveStatus = task.wave_status || 'active';

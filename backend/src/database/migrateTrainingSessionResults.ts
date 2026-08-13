@@ -11,26 +11,18 @@ const pool = new Pool({
   password: process.env.DB_PASSWORD,
 });
 
-async function migrateTrainingSessions() {
+async function migrateTrainingSessionResults() {
   const client = await pool.connect();
   
   try {
-    console.log('Starting training sessions migration...');
+    console.log('Starting training session results migration...');
     await client.query('BEGIN');
     
     await client.query(`
-      CREATE TABLE IF NOT EXISTS training_sessions (
-        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-        task_id UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-        session_number INTEGER NOT NULL DEFAULT 1,
-        starting_wave_damage_dealt INTEGER NOT NULL DEFAULT 0,
-        total_damage INTEGER,
-        total_effective_damage INTEGER DEFAULT 0,
-        damage_by_enemy JSONB DEFAULT '{}',
-        status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'completed')),
-        started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        completed_at TIMESTAMP
-      )
+      ALTER TABLE training_sessions
+      ADD COLUMN IF NOT EXISTS session_number INTEGER DEFAULT 1,
+      ADD COLUMN IF NOT EXISTS total_effective_damage INTEGER DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS damage_by_enemy JSONB DEFAULT '{}'
     `);
     
     await client.query(`
@@ -46,11 +38,6 @@ async function migrateTrainingSessions() {
     `);
     
     await client.query(`
-      CREATE INDEX IF NOT EXISTS idx_training_sessions_task_id
-      ON training_sessions(task_id)
-    `);
-    
-    await client.query(`
       CREATE INDEX IF NOT EXISTS idx_training_session_results_session_id
       ON training_session_results(session_id)
     `);
@@ -61,10 +48,10 @@ async function migrateTrainingSessions() {
     `);
     
     await client.query('COMMIT');
-    console.log('Training sessions migration completed successfully!');
+    console.log('Training session results migration completed successfully!');
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error('Training sessions migration failed:', error);
+    console.error('Training session results migration failed:', error);
     throw error;
   } finally {
     client.release();
@@ -73,7 +60,7 @@ async function migrateTrainingSessions() {
 }
 
 if (require.main === module) {
-  migrateTrainingSessions()
+  migrateTrainingSessionResults()
     .then(() => process.exit(0))
     .catch((error) => {
       console.error(error);
@@ -81,4 +68,4 @@ if (require.main === module) {
     });
 }
 
-export { migrateTrainingSessions };
+export { migrateTrainingSessionResults };

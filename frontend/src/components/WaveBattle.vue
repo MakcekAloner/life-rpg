@@ -278,19 +278,7 @@ const fetchWaveData = async () => {
   }
 };
 
-const startSession = async () => {
-  if (task.value?.is_completed) return;
-  try {
-    await enemyApi.startSession(task.value.id);
-  } catch (err) {
-    console.error('Error starting training session:', err);
-  }
-};
 
-const initialize = async () => {
-  await startSession();
-  await fetchWaveData();
-};
 
 const openAction = (enemy: Enemy) => {
   selectedEnemy.value = enemy;
@@ -398,7 +386,7 @@ const closeBattle = () => {
 };
 
 onMounted(() => {
-  initialize();
+  fetchWaveData();
 });
 </script>
 
