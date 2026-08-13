@@ -3,7 +3,7 @@ import pool from '../database/connection';
 import { recalculateMissionStats, recalculateCampaignProgress } from '../controllers/enemyController';
 import { XPService } from '../services/xpService';
 
-async function applyMissionRewards(client: any, missionId: string) {
+export async function applyMissionRewards(client: any, missionId: string) {
   const missionResult = await client.query(
     `SELECT m.*, c.player_id
      FROM missions m

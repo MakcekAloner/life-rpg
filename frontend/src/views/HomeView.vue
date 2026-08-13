@@ -91,10 +91,14 @@ const characterEmoji = computed(() => {
   }
 });
 
+const campaignMissions = ref<any[]>([]);
+
+const requiredMissions = computed(() => campaignMissions.value.filter((m: any) => m.is_required !== false));
 const campaignProgress = computed(() => {
-  const c = activeCampaign.value;
-  if (!c || !c.total_missions || !c.current_mission_order) return 0;
-  return Math.min(100, Math.round((c.current_mission_order - 1) / c.total_missions * 100));
+  const required = requiredMissions.value;
+  if (!required.length) return 0;
+  const completed = required.filter((m: any) => m.is_completed).length;
+  return Math.min(100, Math.round((completed / required.length) * 100));
 });
 
 const startCampaign = () => {
@@ -116,7 +120,9 @@ onMounted(async () => {
       
       const campaigns = await campaignApi.getCampaigns(playerStore.currentPlayer.id);
       if (campaigns.length > 0) {
-        activeCampaign.value = campaigns[0];
+        const { campaign, missions } = await campaignApi.getCampaignWithMissions(campaigns[0].id);
+        activeCampaign.value = campaign;
+        campaignMissions.value = missions;
       }
     }
   } catch (error) {

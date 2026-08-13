@@ -391,12 +391,25 @@ async function recalculateTaskWaveTotals(client: any, taskId: string) {
     [totalHp, currentHp, damageDealt, anyDamage, allDefeated, waveStatus, taskId]
   );
   
+  // Recalculate mission stats if task belongs to a quest/mission
+  const task = taskResult.rows[0];
+  if (task.quest_id) {
+    const questResult = await client.query(
+      'SELECT mission_id FROM quests WHERE id = $1',
+      [task.quest_id]
+    );
+    
+    if (questResult.rows.length > 0 && questResult.rows[0].mission_id) {
+      await recalculateMissionStats(client, questResult.rows[0].mission_id);
+    }
+  }
+  
   return {
     totalHp,
     currentHp,
     damageDealt,
     allDefeated,
-    task: taskResult.rows[0]
+    task
   };
 }
 

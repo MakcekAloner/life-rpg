@@ -255,9 +255,8 @@ const loadMission = async () => {
     }
     
     const index = w.findIndex((wave: any) => !wave.is_completed);
-    const wavesDone = index === -1;
     
-    if (m.is_completed || wavesDone) {
+    if (m.is_completed) {
       showMissionComplete.value = true;
       activeWaveIndex.value = w.length - 1;
       activeWave.value = null;
@@ -267,8 +266,8 @@ const loadMission = async () => {
       return;
     }
     
-    activeWaveIndex.value = index;
-    const currentWave = w[index];
+    activeWaveIndex.value = index >= 0 ? index : w.length - 1;
+    const currentWave = activeWaveIndex.value >= 0 ? w[activeWaveIndex.value] : null;
     if (currentWave) {
       await loadWaveDetails(currentWave.id);
     }
