@@ -156,18 +156,22 @@ export const updateEnemy = async (req: Request, res: Response) => {
     const enemy = enemyResult.rows[0];
     const newActual = actual_value !== undefined ? Number(actual_value) : Number(enemy.actual_value);
     const previousActual = Number(enemy.actual_value);
-    const previousDamage = Number(enemy.damage_dealt);
+    const maxHp = Number(enemy.max_hp);
+    const currentHp = Number(enemy.current_hp);
+    const targetValue = Number(enemy.target_value);
+    const measurementType = enemy.measurement_type;
     
-    const { damage: totalDamage, currentHp, isDefeated } = calculateDamage(
-      newActual,
-      Number(enemy.target_value),
-      Number(enemy.max_hp),
-      enemy.measurement_type
-    );
+    // Calculate potential damage for this session (actual is per-session, resets each training session)
+    const { damage: newPotentialDamage } = calculateDamage(newActual, targetValue, maxHp, measurementType);
+    const { damage: oldPotentialDamage } = calculateDamage(previousActual, targetValue, maxHp, measurementType);
+    let thisAttackDamage = Math.max(0, newPotentialDamage - oldPotentialDamage);
     
-    const status = getStatus(totalDamage, Number(enemy.max_hp), isDefeated);
-    const newDamageDealt = totalDamage;
-    const thisAttackDamage = totalDamage - previousDamage;
+    // Overkill protection: damage cannot exceed current HP
+    const effectiveDamage = Math.min(thisAttackDamage, currentHp);
+    const newDamageDealt = Number(enemy.damage_dealt) + effectiveDamage;
+    const newCurrentHp = Math.max(0, currentHp - effectiveDamage);
+    const isDefeated = newCurrentHp <= 0;
+    const status = getStatus(newDamageDealt, maxHp, isDefeated);
     
     const client = await pool.connect();
     try {
@@ -184,7 +188,7 @@ export const updateEnemy = async (req: Request, res: Response) => {
              notes = $6
          WHERE id = $7
          RETURNING *`,
-        [newActual, currentHp, newDamageDealt, status, isDefeated, notes || enemy.notes, id]
+        [newActual, newCurrentHp, newDamageDealt, status, isDefeated, notes || enemy.notes, id]
       );
       
       // Log the attack
@@ -192,7 +196,7 @@ export const updateEnemy = async (req: Request, res: Response) => {
         `INSERT INTO enemy_logs 
          (enemy_id, task_id, previous_actual, new_actual, damage_dealt, notes)
          VALUES ($1, $2, $3, $4, $5, $6)`,
-        [id, enemy.task_id, previousActual, newActual, thisAttackDamage, notes]
+        [id, enemy.task_id, previousActual, newActual, effectiveDamage, notes]
       );
       
       // Recalculate task wave totals
@@ -202,7 +206,7 @@ export const updateEnemy = async (req: Request, res: Response) => {
       
       res.json({
         enemy: updateResult.rows[0],
-        thisAttackDamage,
+        thisAttackDamage: effectiveDamage,
         isDefeated
       });
     } catch (error) {
@@ -250,17 +254,20 @@ export const attackEnemies = async (req: Request, res: Response) => {
         
         const enemy = enemyResult.rows[0];
         const previousActual = Number(enemy.actual_value);
-        const previousDamage = Number(enemy.damage_dealt);
+        const maxHp = Number(enemy.max_hp);
+        const currentHp = Number(enemy.current_hp);
+        const targetValue = Number(enemy.target_value);
+        const measurementType = enemy.measurement_type;
         
-        const { damage: totalDamage, currentHp, isDefeated } = calculateDamage(
-          newActual,
-          Number(enemy.target_value),
-          Number(enemy.max_hp),
-          enemy.measurement_type
-        );
+        const { damage: newPotentialDamage } = calculateDamage(newActual, targetValue, maxHp, measurementType);
+        const { damage: oldPotentialDamage } = calculateDamage(previousActual, targetValue, maxHp, measurementType);
+        let thisAttackDamage = Math.max(0, newPotentialDamage - oldPotentialDamage);
+        const effectiveDamage = Math.min(thisAttackDamage, currentHp);
         
-        const status = getStatus(totalDamage, Number(enemy.max_hp), isDefeated);
-        const thisAttackDamage = totalDamage - previousDamage;
+        const newDamageDealt = Number(enemy.damage_dealt) + effectiveDamage;
+        const newCurrentHp = Math.max(0, currentHp - effectiveDamage);
+        const isDefeated = newCurrentHp <= 0;
+        const status = getStatus(newDamageDealt, maxHp, isDefeated);
         
         // Update enemy
         const updateResult = await client.query(
@@ -273,7 +280,7 @@ export const attackEnemies = async (req: Request, res: Response) => {
                notes = $6
            WHERE id = $7
            RETURNING *`,
-          [newActual, currentHp, totalDamage, status, isDefeated, notes || enemy.notes, enemyId]
+          [newActual, newCurrentHp, newDamageDealt, status, isDefeated, notes || enemy.notes, enemyId]
         );
         
         // Log
@@ -281,16 +288,16 @@ export const attackEnemies = async (req: Request, res: Response) => {
           `INSERT INTO enemy_logs 
            (enemy_id, task_id, previous_actual, new_actual, damage_dealt, notes)
            VALUES ($1, $2, $3, $4, $5, $6)`,
-          [enemyId, taskId, previousActual, newActual, thisAttackDamage, notes]
+          [enemyId, taskId, previousActual, newActual, effectiveDamage, notes]
         );
         
         results.push({
           enemy: updateResult.rows[0],
-          thisAttackDamage,
+          thisAttackDamage: effectiveDamage,
           isDefeated
         });
         
-        totalWaveDamage += thisAttackDamage;
+        totalWaveDamage += effectiveDamage;
       }
       
       // Recalculate task wave totals
@@ -318,15 +325,17 @@ export const attackEnemies = async (req: Request, res: Response) => {
 // Helper to recalculate task wave totals
 async function recalculateTaskWaveTotals(client: any, taskId: string) {
   const enemiesResult = await client.query(
-    'SELECT max_hp, damage_dealt, is_defeated FROM enemies WHERE task_id = $1',
+    'SELECT max_hp, current_hp, damage_dealt, is_defeated FROM enemies WHERE task_id = $1',
     [taskId]
   );
   
   const totalHp = enemiesResult.rows.reduce((sum: number, e: any) => sum + Number(e.max_hp), 0);
   const damageDealt = enemiesResult.rows.reduce((sum: number, e: any) => sum + Number(e.damage_dealt), 0);
-  const currentHp = Math.max(0, totalHp - damageDealt);
+  const currentHp = enemiesResult.rows.reduce((sum: number, e: any) => sum + Number(e.current_hp), 0);
   const allDefeated = enemiesResult.rows.length > 0 && enemiesResult.rows.every((e: any) => e.is_defeated);
   const anyDamage = damageDealt > 0;
+  
+  const waveStatus = allDefeated ? 'perfect_clear' : (anyDamage ? 'active' : 'active');
   
   const taskResult = await client.query(
     `UPDATE tasks 
@@ -336,10 +345,11 @@ async function recalculateTaskWaveTotals(client: any, taskId: string) {
          engagement_started = $4,
          all_enemies_defeated = $5,
          is_completed = $5,
+         wave_status = CASE WHEN $5 THEN $6 ELSE COALESCE(wave_status, 'active') END,
          completed_at = CASE WHEN $5 THEN CURRENT_TIMESTAMP ELSE completed_at END
-     WHERE id = $6
+     WHERE id = $7
      RETURNING *`,
-    [totalHp, currentHp, damageDealt, anyDamage, allDefeated, taskId]
+    [totalHp, currentHp, damageDealt, anyDamage, allDefeated, waveStatus, taskId]
   );
   
   return {
@@ -383,6 +393,70 @@ export const getTaskWithEnemies = async (req: Request, res: Response) => {
   }
 };
 
+// Start a new training session for a wave
+export const startTrainingSession = async (req: Request, res: Response) => {
+  try {
+    const { taskId } = req.params;
+    
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      
+      const taskResult = await client.query('SELECT * FROM tasks WHERE id = $1', [taskId]);
+      if (taskResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Task not found' });
+      }
+      
+      const task = taskResult.rows[0];
+      
+      // Mark any stale active sessions as completed with zero damage
+      await client.query(
+        `UPDATE training_sessions 
+         SET status = 'completed', total_damage = 0, completed_at = CURRENT_TIMESTAMP
+         WHERE task_id = $1 AND status = 'active'`,
+        [taskId]
+      );
+      
+      // Reset enemy actual values for the new session
+      await client.query(
+        `UPDATE enemies 
+         SET actual_value = 0,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE task_id = $1`,
+        [taskId]
+      );
+      
+      const startingDamage = Number(task.wave_damage_dealt) || 0;
+      
+      const sessionResult = await client.query(
+        `INSERT INTO training_sessions (task_id, starting_wave_damage_dealt, status)
+         VALUES ($1, $2, 'active')
+         RETURNING *`,
+        [taskId, startingDamage]
+      );
+      
+      const enemiesResult = await client.query('SELECT * FROM enemies WHERE task_id = $1', [taskId]);
+      
+      await client.query('COMMIT');
+      
+      res.json({
+        task: { ...task, wave_damage_dealt: startingDamage },
+        enemies: enemiesResult.rows,
+        session: sessionResult.rows[0]
+      });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error('Error starting training session:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
 // Complete a wave with final result
 export const completeWave = async (req: Request, res: Response) => {
   try {
@@ -393,29 +467,20 @@ export const completeWave = async (req: Request, res: Response) => {
     try {
       await client.query('BEGIN');
       
-      // Get task and enemies
-      const taskResult = await client.query(
-        'SELECT * FROM tasks WHERE id = $1',
-        [taskId]
-      );
-      
+      const taskResult = await client.query('SELECT * FROM tasks WHERE id = $1', [taskId]);
       if (taskResult.rows.length === 0) {
         await client.query('ROLLBACK');
         return res.status(404).json({ error: 'Task not found' });
       }
       
-      const enemiesResult = await client.query(
-        'SELECT * FROM enemies WHERE task_id = $1',
-        [taskId]
-      );
+      const enemiesResult = await client.query('SELECT * FROM enemies WHERE task_id = $1', [taskId]);
       
       const task = taskResult.rows[0];
       const enemies = enemiesResult.rows;
       
-      // Calculate final wave stats
       const totalHp = enemies.length > 0 
         ? enemies.reduce((sum: number, e: any) => sum + Number(e.max_hp), 0)
-        : Number(task.wave_total_hp) || 100;
+        : Number(task.wave_total_hp) || 0;
       
       const damageDealt = enemies.length > 0
         ? enemies.reduce((sum: number, e: any) => sum + Number(e.damage_dealt), 0)
@@ -424,33 +489,57 @@ export const completeWave = async (req: Request, res: Response) => {
       const percent = totalHp > 0 ? Math.round((damageDealt / totalHp) * 100 * 100) / 100 : 0;
       const defeatedCount = enemies.filter((e: any) => e.is_defeated).length;
       const damagedCount = enemies.filter((e: any) => e.damage_dealt > 0 && !e.is_defeated).length;
+      const allDefeated = defeatedCount === enemies.length && enemies.length > 0;
       
-      // Determine wave status
-      let waveStatus: string;
-      if (damageDealt <= 0) {
-        waveStatus = 'missed';
-      } else if (damageDealt >= totalHp) {
-        waveStatus = 'perfect_clear';
-      } else {
-        waveStatus = 'complete';
+      // Find or create active session
+      const sessionResult = await client.query(
+        `SELECT * FROM training_sessions WHERE task_id = $1 AND status = 'active' ORDER BY started_at DESC LIMIT 1`,
+        [taskId]
+      );
+      
+      const startingDamage = sessionResult.rows.length > 0 
+        ? Number(sessionResult.rows[0].starting_wave_damage_dealt)
+        : damageDealt;
+      
+      const sessionDamage = Math.max(0, damageDealt - startingDamage);
+      
+      if (sessionResult.rows.length > 0) {
+        await client.query(
+          `UPDATE training_sessions 
+           SET status = 'completed', total_damage = $1, completed_at = CURRENT_TIMESTAMP
+           WHERE id = $2`,
+          [sessionDamage, sessionResult.rows[0].id]
+        );
       }
       
-      // Update task with final result
+      // Determine wave status. Wave is only complete if all enemies are defeated.
+      let waveStatus = task.wave_status || 'active';
+      let completedAt = task.completed_at;
+      let isCompleted = task.is_completed || false;
+      
+      if (allDefeated) {
+        waveStatus = 'perfect_clear';
+        isCompleted = true;
+        completedAt = completedAt || new Date().toISOString();
+      } else if (sessionDamage <= 0) {
+        waveStatus = 'missed';
+      }
+      
       const updateResult = await client.query(
         `UPDATE tasks 
-         SET is_completed = true,
-             completed_at = CURRENT_TIMESTAMP,
-             wave_status = $1,
-             wave_completed_at = CURRENT_TIMESTAMP,
-             result_percent = $2,
-             wave_damage_dealt = $3,
-             wave_total_hp = $4,
-             enemies_defeated_count = $5,
-             enemies_damaged_count = $6,
-             all_enemies_defeated = $7
-         WHERE id = $8
+         SET is_completed = $1,
+             completed_at = $2,
+             wave_status = $3,
+             wave_completed_at = CASE WHEN $1 THEN CURRENT_TIMESTAMP ELSE wave_completed_at END,
+             result_percent = $4,
+             wave_damage_dealt = $5,
+             wave_total_hp = $6,
+             enemies_defeated_count = $7,
+             enemies_damaged_count = $8,
+             all_enemies_defeated = $9
+         WHERE id = $10
          RETURNING *`,
-        [waveStatus, percent, damageDealt, totalHp, defeatedCount, damagedCount, damageDealt >= totalHp, taskId]
+        [isCompleted, completedAt, waveStatus, percent, damageDealt, totalHp, defeatedCount, damagedCount, allDefeated, taskId]
       );
       
       // Update mission stats if task has quest/mission
@@ -467,6 +556,10 @@ export const completeWave = async (req: Request, res: Response) => {
       
       await client.query('COMMIT');
       
+      const message = allDefeated 
+        ? 'WAVE COMPLETE' 
+        : (sessionDamage > 0 ? 'TRAINING SESSION RECORDED' : 'TRAINING MISSED');
+      
       res.json({
         task: updateResult.rows[0],
         waveStatus,
@@ -475,7 +568,8 @@ export const completeWave = async (req: Request, res: Response) => {
         percent,
         defeatedCount,
         damagedCount,
-        message: getWaveCompletionMessage(waveStatus)
+        sessionDamage,
+        message
       });
     } catch (error) {
       await client.query('ROLLBACK');
@@ -492,13 +586,12 @@ export const completeWave = async (req: Request, res: Response) => {
 function getWaveCompletionMessage(status: string): string {
   switch (status) {
     case 'missed':
-      return 'WAVE MISSED';
+      return 'TRAINING MISSED';
     case 'complete':
-      return 'WAVE COMPLETE';
     case 'perfect_clear':
-      return 'PERFECT CLEAR';
-    default:
       return 'WAVE COMPLETE';
+    default:
+      return 'TRAINING RECORDED';
   }
 }
 

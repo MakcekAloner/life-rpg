@@ -73,9 +73,9 @@
             <span class="cta-icon">⚔️</span>
             <span>{{ ctaLabel }}</span>
           </button>
-          <button v-else class="training-btn completed" disabled>
-            <span class="cta-icon">✓</span>
-            <span>ТРЕНИРОВКА ЗАВЕРШЕНА</span>
+          <button v-else class="training-btn continue" @click="continueFromWave">
+            <span class="cta-icon">→</span>
+            <span>ПРОДОЛЖИТЬ</span>
           </button>
         </div>
       </section>
@@ -105,7 +105,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { missionApi } from '../api/missionApi';
 import { campaignApi } from '../api/campaignApi';
 import { characterApi } from '../api/characterApi';
@@ -114,6 +114,7 @@ import Breadcrumbs from '../components/Breadcrumbs.vue';
 import WaveBattle from '../components/WaveBattle.vue';
 
 const route = useRoute();
+const router = useRouter();
 
 const missionId = computed(() => route.params.id as string);
 const mission = ref<any>(null);
@@ -201,6 +202,16 @@ const loadWaveDetails = async (waveId: string) => {
 const openTraining = () => {
   if (!activeWave.value) return;
   showWaveBattle.value = true;
+};
+
+const continueFromWave = () => {
+  const nextIndex = activeWaveIndex.value + 1;
+  if (nextIndex < waves.value.length) {
+    activeWaveIndex.value = nextIndex;
+    loadWaveDetails(waves.value[nextIndex].id);
+  } else {
+    router.push(campaignRoute.value);
+  }
 };
 
 const handleTrainingUpdated = async () => {
@@ -412,7 +423,8 @@ watch(() => route.params.id, () => loadMission());
   box-shadow: 0 8px 25px rgba(201, 162, 39, 0.4);
 }
 .training-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.training-btn.completed {
+.training-btn.completed,
+.training-btn.continue {
   background: rgba(74, 60, 42, 0.6);
   border-color: #8b7355;
   color: #f4e4a4;

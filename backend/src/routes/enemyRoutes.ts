@@ -8,7 +8,8 @@ import {
   getTaskWithEnemies,
   deleteEnemy,
   completeWave,
-  getMissionStats
+  getMissionStats,
+  startTrainingSession
 } from '../controllers/enemyController';
 
 const router = Router();
@@ -18,6 +19,9 @@ router.get('/:taskId', getTaskWithEnemies);
 
 // Get all enemies for a task
 router.get('/:taskId/enemies', getEnemiesByTask);
+
+// Start a new training session for a wave
+router.post('/:taskId/sessions', startTrainingSession);
 
 // Create a new enemy for a task
 router.post('/:taskId/enemies', createEnemy);

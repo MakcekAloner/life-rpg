@@ -46,6 +46,10 @@ export const enemyApi = {
   attackEnemies: (taskId: string, attacks: Attack[]) =>
     apiClient.post(`/waves/${taskId}/attack`, { attacks }),
 
+  // Start a new training session for a wave
+  startSession: (taskId: string) =>
+    apiClient.post(`/waves/${taskId}/sessions`),
+
   // Complete wave with final result
   completeWave: (taskId: string) =>
     apiClient.post(`/waves/${taskId}/complete`),

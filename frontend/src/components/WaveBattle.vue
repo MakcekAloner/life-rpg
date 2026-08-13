@@ -127,24 +127,30 @@
     </div>
 
     <!-- Result Screen -->
-    <div v-if="task.is_completed" class="result-screen">
-      <div class="result-card">
-        <div class="result-icon">🏁</div>
-        <h2 class="result-title">ТРЕНИРОВКА ЗАВЕРШЕНА</h2>
-        <div class="result-status" :class="task.wave_status">{{ getWaveStatusLabel(task.wave_status) }}</div>
+    <div v-if="showResultScreen || task.is_completed" class="result-screen">
+      <div class="result-card" v-if="result">
+        <div class="result-icon" v-if="result.isComplete">�</div>
+        <div class="result-icon" v-else-if="result.status === 'missed'">⚠️</div>
+        <div class="result-icon" v-else>�🏁</div>
+        <h2 class="result-title">{{ result.title }}</h2>
+        <div class="result-status" :class="result.status">{{ result.statusText }}</div>
 
         <div class="result-stats">
           <div class="result-stat">
-            <span class="result-stat-label">Нанесено урона</span>
-            <span class="result-stat-value">{{ task.wave_damage_dealt }} / {{ task.wave_total_hp }}</span>
+            <span class="result-stat-label">Нанесено урона за сессию</span>
+            <span class="result-stat-value">{{ result.sessionDamage }}</span>
+          </div>
+          <div class="result-stat">
+            <span class="result-stat-label">Накопительный урон</span>
+            <span class="result-stat-value">{{ result.damageDealt }} / {{ result.totalHp }}</span>
           </div>
           <div class="result-stat">
             <span class="result-stat-label">Эффективность</span>
-            <span class="result-stat-value">{{ task.result_percent }}%</span>
+            <span class="result-stat-value">{{ result.percent }}%</span>
           </div>
           <div class="result-stat">
             <span class="result-stat-label">Противников побеждено</span>
-            <span class="result-stat-value">{{ task.enemies_defeated_count }} / {{ enemies.length }}</span>
+            <span class="result-stat-value">{{ result.defeated }} / {{ result.total }}</span>
           </div>
         </div>
 
@@ -158,8 +164,6 @@
             </span>
           </div>
         </div>
-
-        <p class="result-message">{{ getWaveMessage(task.wave_status) }}</p>
 
         <button class="continue-button" @click="closeBattle">
           ПРОДОЛЖИТЬ
@@ -193,6 +197,8 @@ const isAttacking = ref(false);
 const feedbackMessage = ref('');
 const task = ref<any>(props.task);
 const showCompleteConfirm = ref(false);
+const showResultScreen = ref(false);
+const sessionResult = ref<any>(null);
 
 const showActionPanel = ref(false);
 const selectedEnemy = ref<Enemy | null>(null);
@@ -202,6 +208,27 @@ const shaking = ref<Record<string, boolean>>({});
 
 const totalEnemyHp = computed(() => {
   return enemies.value.reduce((sum, e) => sum + e.max_hp, 0);
+});
+
+const result = computed(() => {
+  const data = sessionResult.value;
+  if (data) {
+    const isComplete = data.waveStatus === 'perfect_clear';
+    const title = isComplete ? '🏆 WAVE COMPLETE' : (data.waveStatus === 'missed' ? 'ТРЕНИРОВКА ПРОПУЩЕНА' : 'ТРЕНИРОВКА ЗАФИКСИРОВАНА');
+    return {
+      title,
+      status: data.waveStatus,
+      statusText: data.message,
+      damageDealt: data.damageDealt,
+      totalHp: data.totalHp,
+      percent: data.percent,
+      defeated: data.defeatedCount,
+      total: enemies.value.length,
+      sessionDamage: data.sessionDamage,
+      isComplete
+    };
+  }
+  return null;
 });
 
 const waveProgressPercent = computed(() => {
@@ -249,6 +276,20 @@ const fetchWaveData = async () => {
     console.error('Error fetching wave data:', err);
     feedbackMessage.value = 'Ошибка загрузки тренировки';
   }
+};
+
+const startSession = async () => {
+  if (task.value?.is_completed) return;
+  try {
+    await enemyApi.startSession(task.value.id);
+  } catch (err) {
+    console.error('Error starting training session:', err);
+  }
+};
+
+const initialize = async () => {
+  await startSession();
+  await fetchWaveData();
 };
 
 const openAction = (enemy: Enemy) => {
@@ -337,9 +378,9 @@ const completeWave = async () => {
     const response = await enemyApi.completeWave(task.value.id);
     const result = response.data;
 
+    sessionResult.value = result;
     task.value = result.task;
-    await fetchWaveData();
-
+    showResultScreen.value = true;
     showCompleteConfirm.value = false;
     showFeedback(result.message);
 
@@ -352,30 +393,12 @@ const completeWave = async () => {
   }
 };
 
-const getWaveStatusLabel = (status: string) => {
-  switch (status) {
-    case 'missed': return 'ТРЕНИРОВКА ПРОПУЩЕНА';
-    case 'complete': return 'ТРЕНИРОВКА ЗАВЕРШЕНА';
-    case 'perfect_clear': return 'ИДЕАЛЬНАЯ ТРЕНИРОВКА';
-    default: return 'ТРЕНИРОВКА';
-  }
-};
-
-const getWaveMessage = (status: string) => {
-  switch (status) {
-    case 'missed': return 'В этот раз тренировка не состоялась. Следующая — новый шанс.';
-    case 'complete': return 'Тренировка завершена. Каждый честный прогресс имеет значение.';
-    case 'perfect_clear': return 'Все противники уничтожены! Идеальная тренировка.';
-    default: return 'Тренировка завершена.';
-  }
-};
-
 const closeBattle = () => {
   emit('close');
 };
 
 onMounted(() => {
-  fetchWaveData();
+  initialize();
 });
 </script>
 
@@ -740,12 +763,15 @@ onMounted(() => {
 
 /* Result Screen */
 .result-screen {
-  flex: 1;
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 100;
   display: flex;
   justify-content: center;
   align-items: center;
   padding: 20px;
   overflow-y: auto;
+  background: linear-gradient(180deg, #143314 0%, #1a3d1a 50%, #0f2a0f 100%);
 }
 
 .result-card {
