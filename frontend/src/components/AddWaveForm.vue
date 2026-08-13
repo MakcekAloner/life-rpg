@@ -1,6 +1,6 @@
 <template>
-  <div class="add-wave-form">
-    <h3 class="section-title">🌊 Добавить Wave</h3>
+  <div class="add-wave-form" :class="{ 'inline-mode': props.inline }">
+    <h3 class="section-title" v-if="!props.inline">🌊 Добавить Wave</h3>
     
     <form @submit.prevent="handleSubmit" class="wave-form">
       <div class="form-section main-params">
@@ -150,6 +150,7 @@ interface Props {
   mission: any;
   character: any;
   campaign: any;
+  inline?: boolean;
 }
 
 const props = defineProps<Props>();
@@ -406,6 +407,14 @@ onMounted(() => {
   border-radius: 12px; padding: 15px 25px; color: #f4e4a4; cursor: pointer;
 }
 .btn-cancel:hover { background: rgba(74,60,42,0.8); border-color: #c9a227; }
+
+.add-wave-form.inline-mode {
+  max-width: none;
+  max-height: none;
+  background: rgba(74, 60, 42, 0.5);
+  border-radius: 16px;
+  overflow-y: visible;
+}
 
 @media (max-width: 768px) {
   .form-row.two-cols { grid-template-columns: 1fr; }

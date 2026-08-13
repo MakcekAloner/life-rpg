@@ -23,6 +23,11 @@ const routes: Array<RouteRecordRaw> = [
     component: () => import('../views/CampaignView.vue'),
   },
   {
+    path: '/campaign/:id/play',
+    name: 'campaign-map',
+    component: () => import('../views/CampaignMapView.vue'),
+  },
+  {
     path: '/mission/:id',
     name: 'mission',
     component: () => import('../views/MissionView.vue'),

@@ -1,234 +1,363 @@
 <template>
-  <div class="home">
-    <div class="hero-section" v-if="playerStore.isLoaded">
-      <h1 class="title">Life RPG</h1>
-      <p class="subtitle">Геймификация реальной жизни</p>
-      
+  <div class="main-screen">
+    <div class="top-bar" v-if="playerStore.currentPlayer">
       <div class="player-info">
-        <h2 class="player-name">{{ playerStore.currentPlayer?.display_name }}</h2>
-        <p class="player-bio">{{ playerStore.currentPlayer?.bio }}</p>
-      </div>
-      
-      <div class="stats-preview">
-        <div class="stat-card">
-          <span class="stat-label">Уровень</span>
-          <span class="stat-value">{{ playerStore.currentPlayer?.level }}</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-label">XP</span>
-          <span class="stat-value">{{ playerStore.currentPlayer?.current_xp }}/{{ playerStore.currentPlayer?.next_level_xp }}</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-label">Валюта</span>
-          <span class="stat-value">{{ playerStore.currentPlayer?.currency }}</span>
+        <div class="player-avatar">🦸</div>
+        <div class="player-meta">
+          <div class="player-name">{{ playerStore.currentPlayer.display_name }}</div>
+          <div class="player-level">LVL {{ playerStore.currentPlayer.level }}</div>
         </div>
       </div>
-      
-      <div class="progress-bar">
-        <div class="progress-fill" :style="{ width: playerStore.xpProgress + '%' }"></div>
-      </div>
-      
-      <div class="quick-stats" v-if="playerStore.playerStats">
-        <div class="quick-stat">
-          <span class="quick-stat-label">Активные персонажи</span>
-          <span class="quick-stat-value">{{ playerStore.playerStats.stats.active_characters }}</span>
+      <div class="resources">
+        <div class="resource">
+          <span class="resource-icon">⚡</span>
+          <span class="resource-value">60/60</span>
         </div>
-        <div class="quick-stat">
-          <span class="quick-stat-label">Активные кампании</span>
-          <span class="quick-stat-value">{{ playerStore.playerStats.stats.active_campaigns }}</span>
-        </div>
-        <div class="quick-stat">
-          <span class="quick-stat-label">Выполнено миссий</span>
-          <span class="quick-stat-value">{{ playerStore.playerStats.stats.completed_missions }}</span>
+        <div class="resource">
+          <span class="resource-icon">💎</span>
+          <span class="resource-value">{{ playerStore.currentPlayer.currency }}</span>
         </div>
       </div>
-      
-      <button class="cta-button" @click="goToDashboard" :disabled="playerStore.loading">
-        {{ playerStore.loading ? 'Загрузка...' : 'Перейти к дашборду' }}
+    </div>
+    
+    <div class="side-menu left">
+      <button class="side-btn" @click="goToDashboard">
+        <span class="side-icon">📊</span>
+        <span class="side-label">Dashboard</span>
+      </button>
+      <button class="side-btn" @click="goToBuilder">
+        <span class="side-icon">⚙️</span>
+        <span class="side-label">Builder</span>
       </button>
     </div>
     
-    <div class="hero-section" v-else>
-      <h1 class="title">Life RPG</h1>
-      <p class="subtitle">Геймификация реальной жизни</p>
-      <div class="loading">
-        <p>Загрузка профиля игрока...</p>
+    <div class="main-stage" v-if="playerStore.isLoaded">
+      <div class="character-zone">
+        <div class="character-avatar" :class="currentFormClass">
+          {{ characterEmoji }}
+        </div>
+        <div class="character-name" v-if="currentCharacter">
+          {{ currentCharacter.name }}
+        </div>
+        <div class="character-form" v-if="currentCharacter">
+          {{ currentCharacter.current_form }}
+        </div>
       </div>
+      
+      <div class="campaign-badge" v-if="activeCampaign">
+        <span class="badge-label">Текущая кампания</span>
+        <span class="badge-name">{{ activeCampaign.name }}</span>
+        <span class="badge-progress">{{ campaignProgress }}%</span>
+      </div>
+      
+      <button 
+        class="start-button" 
+        :disabled="!activeCampaign"
+        @click="startCampaign"
+      >
+        <span class="start-label">СТАРТ</span>
+      </button>
+      
+      <p v-if="!activeCampaign" class="no-campaign">
+        Нет активной кампании. Создайте в Builder.
+      </p>
+    </div>
+    
+    <div class="side-menu right">
+      <button class="side-btn" @click="goToMissions">
+        <span class="side-icon">🎯</span>
+        <span class="side-label">Missions</span>
+      </button>
+      <button class="side-btn" @click="goToCharacter">
+        <span class="side-icon">🧍</span>
+        <span class="side-label">Character</span>
+      </button>
+    </div>
+    
+    <div class="bottom-nav">
+      <button class="nav-btn" @click="goToCharacter">
+        <span class="nav-icon">🧍</span>
+        <span>Персонаж</span>
+      </button>
+      <button class="nav-btn" @click="goToCampaignMap" :disabled="!activeCampaign">
+        <span class="nav-icon">🗺️</span>
+        <span>Кампания</span>
+      </button>
+      <button class="nav-btn" @click="goToDashboard">
+        <span class="nav-icon">📊</span>
+        <span>Дашборд</span>
+      </button>
+    </div>
+    
+    <div class="loading" v-if="!playerStore.isLoaded">
+      <p>Загрузка профиля...</p>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue';
+import { onMounted, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { usePlayerStore } from '../stores/playerStore';
+import { useCharacterStore } from '../stores/characterStore';
+import { campaignApi } from '../api/campaignApi';
 
 const router = useRouter();
 const playerStore = usePlayerStore();
+const characterStore = useCharacterStore();
 
-// Use the demo player ID from seed data
 const DEMO_PLAYER_ID = 'df58dfec-7ced-436d-b55e-4c20d9874d19';
 
-onMounted(async () => {
-  try {
-    // Try to fetch player - if it fails, we'll show the loading state
-    await playerStore.fetchPlayer(DEMO_PLAYER_ID);
-    await playerStore.fetchPlayerStats(DEMO_PLAYER_ID);
-  } catch (error) {
-    console.log('Demo player not found, user needs to create one');
+const activeCampaign = computed(() => {
+  const campaign = (window as any).mainScreenCampaign;
+  return campaign || null;
+});
+
+const currentCharacter = computed(() => characterStore.currentCharacter);
+
+const currentFormClass = computed(() => {
+  const form = currentCharacter.value?.current_form || 'starting';
+  return `form-${form}`;
+});
+
+const characterEmoji = computed(() => {
+  const form = currentCharacter.value?.current_form || 'starting';
+  switch (form) {
+    case 'weak': return '🥴';
+    case 'rookie': return '🙂';
+    case 'fighter': return '💪';
+    case 'elite': return '🔥';
+    case 'legendary': return '👑';
+    default: return '😐';
   }
 });
 
-const goToDashboard = () => {
-  router.push('/dashboard');
+const campaignProgress = computed(() => {
+  const c = activeCampaign.value;
+  if (!c || !c.total_missions || !c.current_mission_order) return 0;
+  return Math.min(100, Math.round((c.current_mission_order - 1) / c.total_missions * 100));
+});
+
+const startCampaign = () => {
+  if (activeCampaign.value) {
+    router.push(`/campaign/${activeCampaign.value.id}/play`);
+  }
 };
+
+const goToDashboard = () => router.push('/dashboard');
+const goToBuilder = () => activeCampaign.value ? router.push(`/campaign/${activeCampaign.value.id}`) : router.push('/dashboard');
+const goToMissions = () => router.push('/dashboard');
+const goToCharacter = () => currentCharacter.value ? router.push(`/character/${currentCharacter.value.id}`) : router.push('/dashboard');
+const goToCampaignMap = () => activeCampaign.value ? router.push(`/campaign/${activeCampaign.value.id}/play`) : null;
+
+onMounted(async () => {
+  try {
+    await playerStore.fetchPlayer(DEMO_PLAYER_ID);
+    await playerStore.fetchPlayerStats(DEMO_PLAYER_ID);
+    
+    if (playerStore.currentPlayer) {
+      await characterStore.fetchCharacters(playerStore.currentPlayer.id);
+      if (characterStore.characters.length > 0) {
+        characterStore.setCurrentCharacter(characterStore.characters[0]);
+      }
+      
+      const campaigns = await campaignApi.getCampaigns(playerStore.currentPlayer.id);
+      if (campaigns.length > 0) {
+        (window as any).mainScreenCampaign = campaigns[0];
+      }
+    }
+  } catch (error) {
+    console.log('Main screen load error:', error);
+  }
+});
 </script>
 
 <style scoped>
-.home {
+.main-screen {
   min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-}
-
-.hero-section {
-  text-align: center;
-  max-width: 600px;
-  width: 100%;
-}
-
-.title {
-  font-size: 4rem;
-  font-weight: bold;
-  margin-bottom: 10px;
-  background: linear-gradient(45deg, #f39c12, #e74c3c);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.subtitle {
-  font-size: 1.5rem;
-  color: #bdc3c7;
-  margin-bottom: 40px;
-}
-
-.stats-preview {
+  background: linear-gradient(180deg, #1a3d1a 0%, #0f2a0f 100%);
+  color: #f4e4a4;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
-  margin-bottom: 30px;
-}
-
-.stat-card {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 12px;
+  grid-template-rows: auto 1fr auto;
+  grid-template-columns: 80px 1fr 80px;
+  grid-template-areas:
+    "top top top"
+    "left main right"
+    "bottom bottom bottom";
   padding: 20px;
-  backdrop-filter: blur(10px);
+  gap: 16px;
 }
 
-.stat-label {
-  display: block;
-  font-size: 0.9rem;
-  color: #bdc3c7;
-  margin-bottom: 8px;
-}
-
-.stat-value {
-  display: block;
-  font-size: 1.8rem;
-  font-weight: bold;
-  color: #f39c12;
-}
-
-.progress-bar {
-  width: 100%;
-  height: 20px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-  overflow: hidden;
-  margin-bottom: 30px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-}
-
-.progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #f39c12, #e74c3c);
-  transition: width 0.3s ease;
-}
-
-.cta-button {
-  background: linear-gradient(45deg, #f39c12, #e74c3c);
-  color: white;
-  border: none;
-  padding: 15px 40px;
-  font-size: 1.2rem;
-  border-radius: 30px;
-  cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s;
-  font-weight: bold;
-}
-
-.cta-button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 20px rgba(243, 156, 18, 0.3);
-}
-
-.cta-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+.top-bar {
+  grid-area: top;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.3);
+  border: 2px solid #8b7355;
+  border-radius: 16px;
+  padding: 12px 20px;
 }
 
 .player-info {
-  margin-bottom: 30px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
-.player-name {
-  font-size: 1.8rem;
-  color: #f39c12;
-  margin-bottom: 10px;
-}
-
-.player-bio {
-  color: #bdc3c7;
-  font-size: 1rem;
-}
-
-.quick-stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 15px;
-  margin-bottom: 30px;
-}
-
-.quick-stat {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  padding: 15px;
-  text-align: center;
-}
-
-.quick-stat-label {
-  display: block;
-  font-size: 0.8rem;
-  color: #95a5a6;
-  margin-bottom: 5px;
-}
-
-.quick-stat-value {
-  display: block;
+.player-avatar {
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #c9a227, #8b7355);
+  display: flex; align-items: center; justify-content: center;
   font-size: 1.4rem;
-  font-weight: bold;
-  color: #e74c3c;
 }
 
-.loading {
+.player-name { font-weight: bold; font-size: 1rem; }
+.player-level { font-size: 0.8rem; color: #c9a227; }
+
+.resources { display: flex; gap: 16px; }
+.resource {
+  display: flex; align-items: center; gap: 6px;
+  background: rgba(0,0,0,0.3);
+  border-radius: 20px;
+  padding: 6px 14px;
+}
+.resource-icon { font-size: 1.1rem; }
+.resource-value { font-weight: bold; }
+
+.side-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-self: start;
+  margin-top: 40px;
+}
+
+.side-menu.left { grid-area: left; }
+.side-menu.right { grid-area: right; align-items: flex-end; }
+
+.side-btn {
+  width: 64px;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  background: rgba(74, 60, 42, 0.5);
+  border: 2px solid #8b7355;
+  border-radius: 14px;
+  padding: 12px 4px;
+  color: #f4e4a4;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.side-btn:hover { border-color: #c9a227; transform: translateY(-2px); }
+
+.side-icon { font-size: 1.4rem; }
+.side-label { font-size: 0.65rem; text-align: center; }
+
+.main-stage {
+  grid-area: main;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
   text-align: center;
-  padding: 40px;
-  color: #bdc3c7;
+  padding: 20px 0;
+}
+
+.character-zone { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.character-avatar {
+  width: 160px; height: 160px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4a3c2a, #2d2215);
+  border: 6px solid #c9a227;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 5rem;
+  box-shadow: 0 0 40px rgba(201, 162, 39, 0.4);
+  transition: all 0.3s;
+}
+
+.character-name { font-size: 1.6rem; font-weight: bold; }
+.character-form { font-size: 1rem; color: #8b7355; }
+
+.campaign-badge {
+  background: rgba(74, 60, 42, 0.6);
+  border: 2px solid #8b7355;
+  border-radius: 16px;
+  padding: 14px 30px;
+  display: flex; flex-direction: column; gap: 4px;
+  min-width: 220px;
+}
+.badge-label { font-size: 0.75rem; color: #8b7355; }
+.badge-name { font-size: 1.1rem; font-weight: bold; color: #f4e4a4; }
+.badge-progress { font-size: 0.85rem; color: #c9a227; }
+
+.start-button {
+  min-width: 240px;
+  padding: 22px 50px;
+  background: linear-gradient(180deg, #f1c40f, #d68910);
+  border: 4px solid #f4e4a4;
+  border-radius: 30px;
+  color: #1a3d1a;
+  font-size: 1.6rem;
+  font-weight: bold;
+  cursor: pointer;
+  box-shadow: 0 10px 30px rgba(241, 196, 15, 0.4);
+  transition: all 0.2s;
+}
+.start-button:hover:not(:disabled) {
+  transform: translateY(-4px) scale(1.03);
+  box-shadow: 0 16px 40px rgba(241, 196, 15, 0.6);
+}
+.start-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.no-campaign { color: #8b7355; font-size: 0.9rem; }
+
+.bottom-nav {
+  grid-area: bottom;
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(0,0,0,0.3);
+  border: 2px solid #8b7355;
+  border-radius: 16px;
+  padding: 12px;
+}
+
+.nav-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  background: rgba(74, 60, 42, 0.5);
+  border: 2px solid #8b7355;
+  border-radius: 12px;
+  padding: 10px 20px;
+  color: #f4e4a4;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 80px;
+}
+.nav-btn:hover:not(:disabled) { border-color: #c9a227; }
+.nav-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.nav-icon { font-size: 1.3rem; }
+
+.loading { 
+  grid-area: main; 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
+  color: #8b7355; 
+}
+
+@media (max-width: 768px) {
+  .main-screen {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "top"
+      "main"
+      "bottom";
+  }
+  .side-menu { display: none; }
+  .character-avatar { width: 120px; height: 120px; font-size: 3.5rem; }
 }
 </style>
