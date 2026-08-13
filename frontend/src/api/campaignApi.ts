@@ -32,6 +32,9 @@ export interface Mission {
   failure_criteria?: string[];
   is_completed: boolean;
   is_failed: boolean;
+  is_required: boolean;
+  is_boss: boolean;
+  prerequisite_mission_ids: string[];
   started_at?: string;
   completed_at?: string;
   failed_at?: string;

@@ -97,6 +97,23 @@ export const getMission = async (req: Request, res: Response) => {
     
     const mission = missionResult.rows[0];
     
+    // Get prerequisites with their completion state
+    const prerequisiteIds = mission.prerequisite_mission_ids || [];
+    let prerequisites: any[] = [];
+    let allPrerequisitesCompleted = true;
+    
+    if (prerequisiteIds.length > 0) {
+      const prereqResult = await pool.query(
+        `SELECT id, title, is_completed
+         FROM missions
+         WHERE id = ANY($1::uuid[])
+         ORDER BY "order"`,
+        [prerequisiteIds]
+      );
+      prerequisites = prereqResult.rows;
+      allPrerequisitesCompleted = prerequisites.every((p: any) => p.is_completed);
+    }
+    
     // Get waves (tasks) for this mission through quests
     const wavesResult = await pool.query(
       `SELECT t.*, q.mission_id
@@ -109,7 +126,9 @@ export const getMission = async (req: Request, res: Response) => {
     
     res.json({
       mission,
-      waves: wavesResult.rows
+      waves: wavesResult.rows,
+      prerequisites,
+      all_prerequisites_completed: allPrerequisitesCompleted
     });
   } catch (error) {
     console.error('Error fetching mission:', error);

@@ -307,6 +307,9 @@ const attackEnemy = async (enemy: Enemy) => {
 
     const result = response.data;
     updateEnemyInState(result.enemy);
+    if (result.task) {
+      task.value = result.task;
+    }
 
     inputValues.value[enemy.id] = Number(result.enemy.actual_value);
     closeAction();
@@ -320,8 +323,6 @@ const attackEnemy = async (enemy: Enemy) => {
     } else {
       showFeedback(`-${result.thisAttackDamage} HP`);
     }
-
-    emit('updated', { task: task.value, enemies: enemies.value });
   } catch (err) {
     console.error('Error attacking enemy:', err);
     feedbackMessage.value = 'Ошибка атаки';
@@ -371,8 +372,6 @@ const completeWave = async () => {
     showResultScreen.value = true;
     showCompleteConfirm.value = false;
     showFeedback(result.message);
-
-    emit('updated', { task: result.task, enemies: enemies.value });
   } catch (err) {
     console.error('Error completing wave:', err);
     feedbackMessage.value = 'Ошибка завершения тренировки';

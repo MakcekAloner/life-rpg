@@ -147,8 +147,7 @@
       <WaveBattle
         v-if="showWaveBattle"
         :task="activeWave"
-        @close="showWaveBattle = false"
-        @updated="handleTrainingUpdated"
+        @close="handleBattleClose"
       />
     </template>
     
@@ -239,16 +238,21 @@ const loadMission = async () => {
   rewards.value = null;
   
   try {
-    const { mission: m, waves: w } = await missionApi.getMission(missionId.value);
+    const response = await missionApi.getMission(missionId.value);
+    const m = response.mission;
+    const w = response.waves;
+    const allPrerequisitesCompleted = response.all_prerequisites_completed !== false;
     mission.value = m;
     waves.value = w;
     
     if (m.campaign_id) campaign.value = await campaignApi.getCampaign(m.campaign_id);
     if (m.character_id) character.value = await characterApi.getCharacter(m.character_id);
     
-    // Direct URL to a locked mission
+    // Direct URL to a locked mission: check explicit prerequisites
     const campaignOrder = campaign.value?.current_mission_order || 1;
-    if (!m.is_completed && m.order > campaignOrder) {
+    const lockedByOrder = !m.is_completed && m.order > campaignOrder && m.is_required;
+    const lockedByPrereq = !m.is_completed && !allPrerequisitesCompleted;
+    if (lockedByOrder || lockedByPrereq) {
       error.value = 'Миссия заблокирована';
       loading.value = false;
       return;
@@ -325,7 +329,7 @@ const finishMission = async () => {
   }
 };
 
-const handleTrainingUpdated = async () => {
+const handleBattleClose = async () => {
   showWaveBattle.value = false;
   await loadMission();
 };

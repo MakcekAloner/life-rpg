@@ -225,14 +225,15 @@ export const updateEnemy = async (req: Request, res: Response) => {
       );
       
       // Recalculate task wave totals
-      await recalculateTaskWaveTotals(client, enemy.task_id);
+      const waveTotals = await recalculateTaskWaveTotals(client, enemy.task_id);
       
       await client.query('COMMIT');
       
       res.json({
         enemy: updateResult.rows[0],
         thisAttackDamage: effectiveDamage,
-        isDefeated
+        isDefeated,
+        task: waveTotals.task
       });
     } catch (error) {
       await client.query('ROLLBACK');
@@ -708,9 +709,10 @@ function getWaveCompletionMessage(status: string): string {
 export async function recalculateCampaignProgress(client: any, campaignId: string) {
   const result = await client.query(
     `SELECT 
-      COUNT(*) as total_missions,
-      COUNT(*) FILTER (WHERE is_completed) as completed_missions,
-      MIN("order") FILTER (WHERE NOT is_completed) as next_order
+      COUNT(*) FILTER (WHERE is_required) as total_missions,
+      COUNT(*) FILTER (WHERE is_completed AND is_required) as completed_missions,
+      MIN("order") FILTER (WHERE NOT is_completed AND is_required) as next_order,
+      MAX("order") as max_order
      FROM missions
      WHERE campaign_id = $1`,
     [campaignId]
@@ -720,13 +722,14 @@ export async function recalculateCampaignProgress(client: any, campaignId: strin
   const totalMissions = Number(stats.total_missions) || 0;
   const completedMissions = Number(stats.completed_missions) || 0;
   const allCompleted = totalMissions > 0 && completedMissions === totalMissions;
-  const nextOrder = allCompleted ? totalMissions + 1 : (Number(stats.next_order) || 1);
+  const maxOrder = Number(stats.max_order) || totalMissions;
+  const nextOrder = allCompleted ? (maxOrder + 1) : (Number(stats.next_order) || 1);
   
   await client.query(
     `UPDATE campaigns
      SET current_mission_order = $1,
          is_completed = $2,
-         completed_at = CASE WHEN $2 THEN COALESCE(completed_at, CURRENT_TIMESTAMP) ELSE completed_at END,
+         completed_at = CASE WHEN $2 THEN COALESCE(completed_at, CURRENT_TIMESTAMP) ELSE NULL END,
          updated_at = CURRENT_TIMESTAMP
      WHERE id = $3`,
     [nextOrder, allCompleted, campaignId]

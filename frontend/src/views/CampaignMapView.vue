@@ -37,14 +37,18 @@
           <div class="node-sub" v-else-if="mission.state === 'in-progress'">
             {{ missionProgressText(mission) }}
           </div>
+          <div class="node-sub" v-else-if="mission.state === 'available' && mission.is_required === false">OPTIONAL</div>
           <div class="node-sub" v-else-if="mission.state === 'available'">PLAY</div>
           <div class="node-sub" v-else-if="mission.state === 'locked'">Locked</div>
         </div>
       </div>
       
-      <div class="boss-node" :style="bossPosition">
+      <div v-if="bossMission" class="boss-node" :class="getMissionState(bossMission)" :style="bossPosition" @click="handleMissionClick(bossMission)">
         <div class="boss-dot">👹</div>
-        <div class="boss-label">FINAL BOSS</div>
+        <div class="boss-label">{{ bossMission.title }}</div>
+        <div class="boss-sub" v-if="getMissionState(bossMission) === 'locked'">Locked</div>
+        <div class="boss-sub" v-else-if="getMissionState(bossMission) === 'completed'">COMPLETED</div>
+        <div class="boss-sub" v-else-if="getMissionState(bossMission) === 'available'">PLAY</div>
       </div>
     </div>
     
@@ -77,7 +81,8 @@ const campaign = ref<any>(null);
 const character = ref<any>(null);
 const missions = ref<any[]>([]);
 
-const currentOrder = computed(() => campaign.value?.current_mission_order || 1);
+const nonBossMissions = computed(() => missions.value.filter(m => !m.is_boss));
+const bossMission = computed(() => missions.value.find(m => m.is_boss) || null);
 const requiredMissions = computed(() => missions.value.filter(m => m.is_required !== false));
 const campaignProgress = computed(() => {
   const required = requiredMissions.value;
@@ -87,10 +92,10 @@ const campaignProgress = computed(() => {
 });
 
 const mapPoints = computed(() => {
-  const total = missions.value.length;
+  const total = nonBossMissions.value.length;
   const points: { x: number; y: number }[] = [{ x: 50, y: 90 }];
   
-  missions.value.forEach((_, index) => {
+  nonBossMissions.value.forEach((_, index) => {
     const even = index % 2 === 0;
     points.push({
       x: even ? 26 : 74,
@@ -117,7 +122,7 @@ const roadPath = computed(() => {
 
 const mapMissions = computed(() => {
   const points = mapPoints.value;
-  return missions.value.map((m, index) => {
+  return nonBossMissions.value.map((m, index) => {
     const p = points[index + 1];
     const state = getMissionState(m);
     return {
@@ -136,9 +141,16 @@ const bossPosition = computed(() => ({
   top: '12%',
 }));
 
+const arePrerequisitesCompleted = (m: any) => {
+  if (!m.prerequisite_mission_ids || !m.prerequisite_mission_ids.length) return true;
+  const prereqSet = new Set(m.prerequisite_mission_ids);
+  const completedSet = new Set(missions.value.filter((mm: any) => mm.is_completed).map((mm: any) => mm.id));
+  return Array.from(prereqSet).every((id: any) => completedSet.has(id));
+};
+
 const getMissionState = (m: any) => {
   if (m.is_completed) return 'completed';
-  if (m.order > currentOrder.value) return 'locked';
+  if (!arePrerequisitesCompleted(m)) return 'locked';
   const hasProgress = (m.completed_waves || 0) > 0 || (m.total_sessions || 0) > 0;
   if (hasProgress) return 'in-progress';
   return 'available';
@@ -360,6 +372,17 @@ watch(() => route.params.id, () => loadMap());
   color: #e74c3c;
   text-shadow: 0 2px 4px rgba(0,0,0,0.6);
 }
+.boss-sub {
+  font-size: 0.7rem;
+  color: #8b7355;
+}
+.boss-node.available .boss-dot {
+  box-shadow: 0 0 30px rgba(241, 196, 15, 0.8);
+  animation: node-pulse 2s infinite;
+}
+.boss-node.locked .boss-dot { opacity: 0.45; filter: grayscale(0.8); }
+.boss-node.completed .boss-dot { border-color: #f1c40f; background: rgba(241, 196, 15, 0.2); box-shadow: 0 0 30px rgba(241, 196, 15, 0.6); }
+.boss-node.locked { cursor: not-allowed; }
 
 .map-footer {
   flex: 0 0 auto;
