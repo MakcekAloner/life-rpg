@@ -96,7 +96,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, computed } from 'vue';
+import { onMounted, computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { usePlayerStore } from '../stores/playerStore';
 import { useCharacterStore } from '../stores/characterStore';
@@ -107,11 +107,7 @@ const playerStore = usePlayerStore();
 const characterStore = useCharacterStore();
 
 const DEMO_PLAYER_ID = 'df58dfec-7ced-436d-b55e-4c20d9874d19';
-
-const activeCampaign = computed(() => {
-  const campaign = (window as any).mainScreenCampaign;
-  return campaign || null;
-});
+const activeCampaign = ref<any>(null);
 
 const currentCharacter = computed(() => characterStore.currentCharacter);
 
@@ -163,7 +159,7 @@ onMounted(async () => {
       
       const campaigns = await campaignApi.getCampaigns(playerStore.currentPlayer.id);
       if (campaigns.length > 0) {
-        (window as any).mainScreenCampaign = campaigns[0];
+        activeCampaign.value = campaigns[0];
       }
     }
   } catch (error) {

@@ -420,6 +420,23 @@ CREATE INDEX idx_quests_mission_id ON quests(mission_id);
 CREATE INDEX idx_tasks_quest_id ON tasks(quest_id);
 CREATE INDEX idx_actions_task_id ON actions(task_id);
 CREATE INDEX idx_skills_character_id ON skills(character_id);
+
+-- Skill milestones table
+CREATE TABLE IF NOT EXISTS skill_milestones (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    skill_id UUID NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
+    character_id UUID NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    title VARCHAR(100) NOT NULL,
+    description TEXT,
+    "order" INTEGER NOT NULL DEFAULT 1,
+    is_achieved BOOLEAN DEFAULT false,
+    achieved_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_skill_milestones_skill_id ON skill_milestones(skill_id);
+CREATE INDEX idx_skill_milestones_character_id ON skill_milestones(character_id);
 CREATE INDEX idx_xp_entries_player_id ON xp_entries(player_id);
 CREATE INDEX idx_currency_entries_player_id ON currency_entries(player_id);
 CREATE INDEX idx_streaks_player_id ON streaks(player_id);

@@ -18,6 +18,11 @@ const routes: Array<RouteRecordRaw> = [
     component: () => import('../views/CharacterView.vue'),
   },
   {
+    path: '/character/:id/skills',
+    name: 'character-skills',
+    component: () => import('../views/CharacterSkillsView.vue'),
+  },
+  {
     path: '/campaign/:id',
     name: 'campaign',
     component: () => import('../views/CampaignView.vue'),

@@ -19,6 +19,7 @@ import missionRoutes from './routes/missionRoutes';
 import questRoutes from './routes/questRoutes';
 import taskRoutes from './routes/taskRoutes';
 import enemyRoutes from './routes/enemyRoutes';
+import skillRoutes from './routes/skillRoutes';
 
 // Basic route
 app.get('/api/health', (req, res) => {
@@ -33,6 +34,7 @@ app.use('/api/missions', missionRoutes);
 app.use('/api/quests', questRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api/waves', enemyRoutes);
+app.use('/api/skills', skillRoutes);
 
 // Start server
 app.listen(PORT, () => {
