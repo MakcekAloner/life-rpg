@@ -49,7 +49,7 @@
               Используй иерархию: Персонаж → Кампания → Миссия → Wave
             </p>
             <button class="btn-add-task-dashboard" @click="goToCharacters">
-              � Перейти к персонажам
+              🏹 Перейти к персонажам
             </button>
           </div>
           
@@ -87,12 +87,12 @@
             </div>
           </div>
           
-          <div class="dashboard-section" v-if="playerStore.playerStats?.stats.active_debuffs.length > 0">
+          <div class="dashboard-section" v-if="activeDebuffs.length > 0">
             <h3 class="section-title">⚠️ Активные дебаффы</h3>
             <div class="debuffs-list">
               <div
                 class="debuff-item"
-                v-for="debuff in playerStore.playerStats.stats.active_debuffs"
+                v-for="debuff in activeDebuffs"
                 :key="debuff.id"
               >
                 <div class="debuff-header">
@@ -138,7 +138,6 @@ import { useTaskStore } from '../stores/taskStore';
 import PlayerProfile from '../components/PlayerProfile.vue';
 import CharacterCard from '../components/CharacterCard.vue';
 import TaskList from '../components/TaskList.vue';
-import AddTaskForm from '../components/AddTaskForm.vue';
 import WaveBattle from '../components/WaveBattle.vue';
 
 const router = useRouter();
@@ -151,7 +150,7 @@ const showAddTaskForm = ref(false);
 const showWaveBattle = ref(false);
 const selectedTask = ref<any>(null);
 
-const activeCharacters = computed(() => characterStore.activeCharacters);
+const activeDebuffs = computed(() => playerStore.playerStats?.stats?.active_debuffs ?? []);
 const tasks = computed(() => taskStore.tasks);
 
 onMounted(async () => {
@@ -175,6 +174,10 @@ const viewCharacter = (characterId: string) => {
 
 const selectCharacter = (characterId: string) => {
   characterStore.setCurrentCharacter(characterStore.characterById(characterId) || null);
+};
+
+const goToCharacters = () => {
+  router.push('/');
 };
 
 const handleTaskComplete = async (task: any) => {
@@ -216,19 +219,6 @@ const handleTaskToggle = async (task: any) => {
     await taskStore.updateTask(task.id, { is_completed: false });
   } catch (error) {
     console.error('Error toggling task:', error);
-  }
-};
-
-const handleAddTask = async (taskData: any) => {
-  try {
-    // Use taskStore to create task in database
-    // taskStore.createTask already adds the task to the array
-    await taskStore.createTask(taskData);
-    showAddTaskForm.value = false;
-    
-    console.log('Task created successfully');
-  } catch (error) {
-    console.error('Error adding task:', error);
   }
 };
 
