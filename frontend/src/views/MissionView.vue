@@ -12,7 +12,7 @@
       <button class="retry-button" @click="$router.push(campaignRoute)">Назад к кампании</button>
     </div>
     
-    <template v-else-if="mission && activeWave">
+    <template v-else-if="mission">
       <!-- Mission Header -->
       <header class="mission-header">
         <h1 class="mission-title">{{ mission.title }}</h1>
@@ -20,7 +20,7 @@
       </header>
       
       <!-- Current Wave Section -->
-      <section class="wave-section">
+      <section class="wave-section" v-if="activeWave && !showMissionComplete">
         <div class="wave-label">ТРЕНИРОВКА {{ sessionNumber }}</div>
         <h2 class="wave-title">{{ activeWave.title }}</h2>
         
@@ -125,6 +125,12 @@
         </div>
       </div>
       
+      <!-- Fallback: no current wave -->
+      <div v-else-if="!activeWave && !showMissionComplete" class="fallback-state">
+        <p>Не удалось определить текущую Wave</p>
+        <button class="back-btn" @click="$router.push(campaignRoute)">← Кампания</button>
+      </div>
+      
       <!-- Mission Footer -->
       <div class="mission-footer">
         <button class="back-btn" @click="$router.push(campaignRoute)">
@@ -141,9 +147,9 @@
       />
     </template>
     
-    <div class="empty-state" v-else-if="!loading && mission && !activeWave && !showMissionComplete">
-      <p>В этой миссии пока нет тренировок</p>
-      <button class="back-btn" @click="$router.push(campaignRoute)">← Кампания</button>
+    <div class="empty-state" v-else-if="!loading && !error">
+      <p>Миссия не найдена</p>
+      <button class="back-btn" @click="$router.push('/')">🏠 Главная</button>
     </div>
   </div>
 </template>
@@ -548,6 +554,17 @@ watch(() => route.params.id, () => loadMission());
 }
 
 .retry-button, .back-btn { font-size: 1rem; }
+
+.fallback-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 60px 20px;
+  color: #8b7355;
+}
 
 .victory-banner {
   margin: 0 auto 20px;
