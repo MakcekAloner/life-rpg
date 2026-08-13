@@ -79,7 +79,7 @@
           <template v-else-if="!allWavesCompleted">
             <div class="victory-banner">
               <div class="victory-icon">🏆</div>
-              <div class="victory-title">ВОЛНА ПРОЙДЕНА</div>
+              <div class="victory-title">ТРЕНИРОВКА ЗАВЕРШЕНА</div>
               <div class="victory-stats">
                 <span>Тренировок: {{ completedSessionsCount }}</span>
                 <span>Урон: {{ activeWave.wave_damage_dealt || 0 }} / {{ activeWave.wave_total_hp || totalEnemyHp }}</span>
@@ -118,6 +118,11 @@
           <div class="mission-complete-stats">
             <span>Волн пройдено: {{ waves.length }} / {{ waves.length }}</span>
             <span v-if="mission.total_sessions">Тренировок: {{ mission.total_sessions }}</span>
+          </div>
+          <div v-if="rewards?.applied" class="rewards-block">
+            <div class="reward-line" v-if="rewards.xpGained">+{{ rewards.xpGained }} XP</div>
+            <div class="reward-line currency" v-if="rewards.currencyGained">+{{ rewards.currencyGained }} 💎</div>
+            <div class="reward-line level-up" v-if="rewards.leveledUp">LEVEL UP!</div>
           </div>
           <button class="back-btn" @click="$router.push(campaignRoute)">
             → ВЕРНУТЬСЯ НА КАРТУ
@@ -161,10 +166,12 @@ import { missionApi } from '../api/missionApi';
 import { campaignApi } from '../api/campaignApi';
 import { characterApi } from '../api/characterApi';
 import { enemyApi } from '../api/enemyApi';
+import { usePlayerStore } from '../stores/playerStore';
 import Breadcrumbs from '../components/Breadcrumbs.vue';
 import WaveBattle from '../components/WaveBattle.vue';
 
 const route = useRoute();
+const playerStore = usePlayerStore();
 
 const missionId = computed(() => route.params.id as string);
 const mission = ref<any>(null);
@@ -180,6 +187,7 @@ const loading = ref(true);
 const error = ref<string | null>(null);
 const showWaveBattle = ref(false);
 const showMissionComplete = ref(false);
+const rewards = ref<any>(null);
 
 const campaignRoute = computed(() => campaign.value ? `/campaign/${campaign.value.id}/play` : '/');
 
@@ -228,6 +236,7 @@ const loadMission = async () => {
   loading.value = true;
   error.value = null;
   showMissionComplete.value = false;
+  rewards.value = null;
   
   try {
     const { mission: m, waves: w } = await missionApi.getMission(missionId.value);
@@ -236,6 +245,14 @@ const loadMission = async () => {
     
     if (m.campaign_id) campaign.value = await campaignApi.getCampaign(m.campaign_id);
     if (m.character_id) character.value = await characterApi.getCharacter(m.character_id);
+    
+    // Direct URL to a locked mission
+    const campaignOrder = campaign.value?.current_mission_order || 1;
+    if (!m.is_completed && m.order > campaignOrder) {
+      error.value = 'Миссия заблокирована';
+      loading.value = false;
+      return;
+    }
     
     const index = w.findIndex((wave: any) => !wave.is_completed);
     const wavesDone = index === -1;
@@ -299,7 +316,11 @@ const finishMission = async () => {
     const response = await missionApi.completeMission(missionId.value);
     mission.value = response.mission;
     waves.value = response.waves;
+    rewards.value = response.rewards;
     showMissionComplete.value = true;
+    if (campaign.value?.player_id) {
+      await playerStore.fetchPlayer(campaign.value.player_id);
+    }
   } catch (err) {
     console.error('Error completing mission:', err);
   }
@@ -619,6 +640,17 @@ watch(() => route.params.id, () => loadMission());
   margin-bottom: 24px;
   font-size: 1.1rem;
 }
+.rewards-block {
+  margin-bottom: 24px;
+}
+.reward-line {
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: #f1c40f;
+  margin: 6px 0;
+}
+.reward-line.currency { color: #f4e4a4; }
+.reward-line.level-up { color: #2ecc71; }
 
 .training-btn.complete {
   background: linear-gradient(180deg, #2ecc71, #27ae60);

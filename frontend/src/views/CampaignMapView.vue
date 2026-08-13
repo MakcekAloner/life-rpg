@@ -37,6 +37,7 @@
           <div class="node-sub" v-else-if="mission.state === 'in-progress'">
             {{ missionProgressText(mission) }}
           </div>
+          <div class="node-sub" v-else-if="mission.state === 'available'">PLAY</div>
           <div class="node-sub" v-else-if="mission.state === 'locked'">Locked</div>
         </div>
       </div>
@@ -77,10 +78,12 @@ const character = ref<any>(null);
 const missions = ref<any[]>([]);
 
 const currentOrder = computed(() => campaign.value?.current_mission_order || 1);
+const requiredMissions = computed(() => missions.value.filter(m => m.is_required !== false));
 const campaignProgress = computed(() => {
-  if (!missions.value.length) return 0;
-  const completed = missions.value.filter(m => m.is_completed).length;
-  return Math.round(completed / missions.value.length * 100);
+  const required = requiredMissions.value;
+  if (!required.length) return 0;
+  const completed = required.filter(m => m.is_completed).length;
+  return Math.round(completed / required.length * 100);
 });
 
 const mapPoints = computed(() => {
@@ -135,8 +138,10 @@ const bossPosition = computed(() => ({
 
 const getMissionState = (m: any) => {
   if (m.is_completed) return 'completed';
-  if (m.order <= currentOrder.value) return 'in-progress';
-  return 'locked';
+  if (m.order > currentOrder.value) return 'locked';
+  const hasProgress = (m.completed_waves || 0) > 0 || (m.total_sessions || 0) > 0;
+  if (hasProgress) return 'in-progress';
+  return 'available';
 };
 
 const missionStars = (m: any) => {
@@ -148,6 +153,7 @@ const missionStars = (m: any) => {
 };
 
 const missionProgressText = (m: any) => {
+  if (m.is_completed) return 'COMPLETED';
   if (m.waves_count) return `Waves ${m.completed_waves || 0}/${m.waves_count}`;
   return 'PLAY';
 };
@@ -308,6 +314,13 @@ watch(() => route.params.id, () => loadMap());
   background: rgba(46, 204, 113, 0.15);
   box-shadow: 0 0 25px rgba(46, 204, 113, 0.6);
   animation: node-pulse 1.6s infinite;
+}
+
+.mission-node.available .node-dot {
+  border-color: #f1c40f;
+  background: rgba(241, 196, 15, 0.15);
+  box-shadow: 0 0 25px rgba(241, 196, 15, 0.7);
+  animation: node-pulse 2s infinite;
 }
 
 .mission-node.completed .node-dot {

@@ -214,7 +214,7 @@ const result = computed(() => {
   const data = sessionResult.value;
   if (data) {
     const isComplete = data.waveStatus === 'perfect_clear';
-    const title = isComplete ? '🏆 ВОЛНА ПРОЙДЕНА' : (data.waveStatus === 'missed' ? 'ТРЕНИРОВКА ПРОПУЩЕНА' : 'ТРЕНИРОВКА ЗАФИКСИРОВАНА');
+    const title = isComplete ? '🏆 ТРЕНИРОВКА ЗАВЕРШЕНА' : (data.waveStatus === 'missed' ? 'ТРЕНИРОВКА ПРОПУЩЕНА' : 'ТРЕНИРОВКА ЗАФИКСИРОВАНА');
     return {
       title,
       status: data.waveStatus,
