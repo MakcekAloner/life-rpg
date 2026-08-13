@@ -69,16 +69,61 @@
         
         <!-- CTA -->
         <div class="cta-area">
-          <button v-if="!activeWave.is_completed" class="training-btn" @click="openTraining" :disabled="!activeEnemies.length">
-            <span class="cta-icon">⚔️</span>
-            <span>{{ ctaLabel }}</span>
-          </button>
-          <button v-else class="training-btn continue" @click="continueFromWave">
-            <span class="cta-icon">→</span>
-            <span>ПРОДОЛЖИТЬ</span>
-          </button>
+          <template v-if="!activeWave.is_completed">
+            <button class="training-btn" @click="openTraining" :disabled="!activeEnemies.length">
+              <span class="cta-icon">⚔️</span>
+              <span>{{ ctaLabel }}</span>
+            </button>
+          </template>
+          
+          <template v-else-if="!allWavesCompleted">
+            <div class="victory-banner">
+              <div class="victory-icon">🏆</div>
+              <div class="victory-title">ВОЛНА ПРОЙДЕНА</div>
+              <div class="victory-stats">
+                <span>Тренировок: {{ completedSessionsCount }}</span>
+                <span>Урон: {{ activeWave.wave_damage_dealt || 0 }} / {{ activeWave.wave_total_hp || totalEnemyHp }}</span>
+                <span>Противников: {{ activeEnemies.length }} / {{ activeEnemies.length }}</span>
+              </div>
+            </div>
+            <button class="training-btn continue" @click="goToNextWave">
+              <span class="cta-icon">→</span>
+              <span>СЛЕДУЮЩАЯ ВОЛНА</span>
+            </button>
+          </template>
+          
+          <template v-else>
+            <div class="victory-banner mission-victory">
+              <div class="victory-icon">🏆</div>
+              <div class="victory-title">ВСЕ ВОЛНЫ ПРОЙДЕНЫ</div>
+              <div class="victory-stats">
+                <span>Волн: {{ waves.length }} / {{ waves.length }}</span>
+                <span v-if="mission.total_sessions">Тренировок: {{ mission.total_sessions }}</span>
+              </div>
+            </div>
+            <button class="training-btn complete" @click="finishMission">
+              <span class="cta-icon">✓</span>
+              <span>ЗАВЕРШИТЬ МИССИЮ</span>
+            </button>
+          </template>
         </div>
       </section>
+      
+      <!-- Mission Complete Overlay -->
+      <div v-if="showMissionComplete" class="mission-complete-overlay">
+        <div class="mission-complete-card">
+          <div class="mission-complete-icon">🏆</div>
+          <h2 class="mission-complete-title">МИССИЯ ВЫПОЛНЕНА</h2>
+          <h3 class="mission-complete-name">{{ mission.title }}</h3>
+          <div class="mission-complete-stats">
+            <span>Волн пройдено: {{ waves.length }} / {{ waves.length }}</span>
+            <span v-if="mission.total_sessions">Тренировок: {{ mission.total_sessions }}</span>
+          </div>
+          <button class="back-btn" @click="$router.push(campaignRoute)">
+            → ВЕРНУТЬСЯ НА КАРТУ
+          </button>
+        </div>
+      </div>
       
       <!-- Mission Footer -->
       <div class="mission-footer">
@@ -96,7 +141,7 @@
       />
     </template>
     
-    <div class="empty-state" v-else-if="!loading && mission && !activeWave">
+    <div class="empty-state" v-else-if="!loading && mission && !activeWave && !showMissionComplete">
       <p>В этой миссии пока нет тренировок</p>
       <button class="back-btn" @click="$router.push(campaignRoute)">← Кампания</button>
     </div>
@@ -105,7 +150,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { useRoute } from 'vue-router';
 import { missionApi } from '../api/missionApi';
 import { campaignApi } from '../api/campaignApi';
 import { characterApi } from '../api/characterApi';
@@ -114,7 +159,6 @@ import Breadcrumbs from '../components/Breadcrumbs.vue';
 import WaveBattle from '../components/WaveBattle.vue';
 
 const route = useRoute();
-const router = useRouter();
 
 const missionId = computed(() => route.params.id as string);
 const mission = ref<any>(null);
@@ -129,6 +173,7 @@ const activeSession = ref<any>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const showWaveBattle = ref(false);
+const showMissionComplete = ref(false);
 
 const campaignRoute = computed(() => campaign.value ? `/campaign/${campaign.value.id}/play` : '/');
 
@@ -169,9 +214,14 @@ const sessionNumber = computed(() => {
   return sessions.value.length + 1;
 });
 
+const completedSessionsCount = computed(() => sessions.value.filter(s => s.status === 'completed' || s.completed_at).length);
+
+const allWavesCompleted = computed(() => waves.value.length > 0 && waves.value.every(w => w.is_completed));
+
 const loadMission = async () => {
   loading.value = true;
   error.value = null;
+  showMissionComplete.value = false;
   
   try {
     const { mission: m, waves: w } = await missionApi.getMission(missionId.value);
@@ -182,9 +232,20 @@ const loadMission = async () => {
     if (m.character_id) character.value = await characterApi.getCharacter(m.character_id);
     
     const index = w.findIndex((wave: any) => !wave.is_completed);
-    const currentWave = index !== -1 ? w[index] : w[0];
-    activeWaveIndex.value = index !== -1 ? index : 0;
+    const wavesDone = index === -1;
     
+    if (m.is_completed || wavesDone) {
+      showMissionComplete.value = true;
+      activeWaveIndex.value = w.length - 1;
+      activeWave.value = null;
+      activeEnemies.value = [];
+      sessions.value = [];
+      activeSession.value = null;
+      return;
+    }
+    
+    activeWaveIndex.value = index;
+    const currentWave = w[index];
     if (currentWave) {
       await loadWaveDetails(currentWave.id);
     }
@@ -219,13 +280,22 @@ const openTraining = async () => {
   }
 };
 
-const continueFromWave = () => {
+const goToNextWave = () => {
   const nextIndex = activeWaveIndex.value + 1;
   if (nextIndex < waves.value.length) {
     activeWaveIndex.value = nextIndex;
     loadWaveDetails(waves.value[nextIndex].id);
-  } else {
-    router.push(campaignRoute.value);
+  }
+};
+
+const finishMission = async () => {
+  try {
+    const response = await missionApi.completeMission(missionId.value);
+    mission.value = response.mission;
+    waves.value = response.waves;
+    showMissionComplete.value = true;
+  } catch (err) {
+    console.error('Error completing mission:', err);
   }
 };
 
@@ -478,6 +548,66 @@ watch(() => route.params.id, () => loadMission());
 }
 
 .retry-button, .back-btn { font-size: 1rem; }
+
+.victory-banner {
+  margin: 0 auto 20px;
+  max-width: 700px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 3px solid #f1c40f;
+  border-radius: 20px;
+  padding: 24px;
+  text-align: center;
+  color: #f4e4a4;
+  box-shadow: 0 0 25px rgba(241, 196, 15, 0.25);
+}
+.victory-icon { font-size: 2.5rem; }
+.victory-title { font-size: 1.4rem; font-weight: bold; margin: 8px 0; color: #f1c40f; }
+.victory-stats {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 0.95rem;
+}
+
+.mission-complete-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 200;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.85);
+  padding: 20px;
+}
+.mission-complete-card {
+  max-width: 520px;
+  width: 100%;
+  background: linear-gradient(180deg, #1a3d1a, #0f2a0f);
+  border: 3px solid #f1c40f;
+  border-radius: 24px;
+  padding: 40px;
+  text-align: center;
+  color: #f4e4a4;
+  box-shadow: 0 0 40px rgba(241, 196, 15, 0.3);
+}
+.mission-complete-icon { font-size: 3.5rem; }
+.mission-complete-title { font-size: 1.8rem; margin: 12px 0; color: #f1c40f; }
+.mission-complete-name { font-size: 1.4rem; margin: 0 0 20px; }
+.mission-complete-stats {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 24px;
+  font-size: 1.1rem;
+}
+
+.training-btn.complete {
+  background: linear-gradient(180deg, #2ecc71, #27ae60);
+  border-color: #f4e4a4;
+  color: #1a3d1a;
+}
 
 @media (max-width: 768px) {
   .mission-title { font-size: 1.6rem; }

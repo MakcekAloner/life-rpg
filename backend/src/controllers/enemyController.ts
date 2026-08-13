@@ -691,8 +691,37 @@ function getWaveCompletionMessage(status: string): string {
   }
 }
 
+// Helper to recalculate campaign progress
+export async function recalculateCampaignProgress(client: any, campaignId: string) {
+  const result = await client.query(
+    `SELECT 
+      COUNT(*) as total_missions,
+      COUNT(*) FILTER (WHERE is_completed) as completed_missions,
+      MIN("order") FILTER (WHERE NOT is_completed) as next_order
+     FROM missions
+     WHERE campaign_id = $1`,
+    [campaignId]
+  );
+  
+  const stats = result.rows[0];
+  const totalMissions = Number(stats.total_missions) || 0;
+  const completedMissions = Number(stats.completed_missions) || 0;
+  const allCompleted = totalMissions > 0 && completedMissions === totalMissions;
+  const nextOrder = allCompleted ? totalMissions + 1 : (Number(stats.next_order) || 1);
+  
+  await client.query(
+    `UPDATE campaigns
+     SET current_mission_order = $1,
+         is_completed = $2,
+         completed_at = CASE WHEN $2 THEN COALESCE(completed_at, CURRENT_TIMESTAMP) ELSE completed_at END,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE id = $3`,
+    [nextOrder, allCompleted, campaignId]
+  );
+}
+
 // Helper to recalculate mission stats
-async function recalculateMissionStats(client: any, missionId: string) {
+export async function recalculateMissionStats(client: any, missionId: string) {
   const result = await client.query(
     `SELECT 
       COUNT(t.id) as total_waves,
@@ -700,7 +729,11 @@ async function recalculateMissionStats(client: any, missionId: string) {
       COALESCE(SUM(t.wave_damage_dealt), 0) as total_damage,
       COALESCE(SUM(t.wave_total_hp), 0) as max_possible_damage,
       COUNT(t.id) FILTER (WHERE t.wave_status = 'perfect_clear') as perfect_clears,
-      COALESCE(SUM(t.enemies_defeated_count), 0) as enemies_defeated_count
+      COALESCE(SUM(t.enemies_defeated_count), 0) as enemies_defeated_count,
+      (SELECT COUNT(*) FROM training_sessions s
+       JOIN tasks t2 ON s.task_id = t2.id
+       JOIN quests q2 ON t2.quest_id = q2.id
+       WHERE q2.mission_id = $1 AND s.status = 'completed') as total_sessions
      FROM tasks t
      JOIN quests q ON t.quest_id = q.id
      WHERE q.mission_id = $1`,
@@ -708,6 +741,11 @@ async function recalculateMissionStats(client: any, missionId: string) {
   );
   
   const stats = result.rows[0];
+  
+  const missionResult = await client.query(
+    `SELECT campaign_id FROM missions WHERE id = $1`,
+    [missionId]
+  );
   
   await client.query(
     `UPDATE missions 
@@ -717,8 +755,9 @@ async function recalculateMissionStats(client: any, missionId: string) {
          max_possible_damage = $4,
          perfect_clears = $5,
          enemies_defeated_count = $6,
+         total_sessions = $7,
          updated_at = CURRENT_TIMESTAMP
-     WHERE id = $7`,
+     WHERE id = $8`,
     [
       Number(stats.total_waves),
       Number(stats.completed_waves),
@@ -726,6 +765,7 @@ async function recalculateMissionStats(client: any, missionId: string) {
       Number(stats.max_possible_damage),
       Number(stats.perfect_clears),
       Number(stats.enemies_defeated_count),
+      Number(stats.total_sessions || 0),
       missionId
     ]
   );

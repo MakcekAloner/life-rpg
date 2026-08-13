@@ -25,5 +25,10 @@ export const missionApi = {
   createMission: async (data: any): Promise<Mission> => {
     const response = await apiClient.post('/missions', data);
     return response.data;
+  },
+
+  completeMission: async (id: string): Promise<{ mission: Mission; waves: any[] }> => {
+    const response = await apiClient.post(`/missions/${id}/complete`);
+    return response.data;
   }
 };
