@@ -20,17 +20,6 @@
       </div>
     </div>
     
-    <div class="side-menu left">
-      <button class="side-btn" @click="goToDashboard">
-        <span class="side-icon">📊</span>
-        <span class="side-label">Dashboard</span>
-      </button>
-      <button class="side-btn" @click="goToBuilder">
-        <span class="side-icon">⚙️</span>
-        <span class="side-label">Builder</span>
-      </button>
-    </div>
-    
     <div class="main-stage" v-if="playerStore.isLoaded">
       <div class="character-zone">
         <div class="character-avatar" :class="currentFormClass">
@@ -40,7 +29,7 @@
           {{ currentCharacter.name }}
         </div>
         <div class="character-form" v-if="currentCharacter">
-          {{ currentCharacter.current_form }}
+          LVL {{ currentCharacter.level || 1 }} · {{ currentCharacter.current_form }}
         </div>
       </div>
       
@@ -59,37 +48,11 @@
       </button>
       
       <p v-if="!activeCampaign" class="no-campaign">
-        Нет активной кампании. Создайте в Builder.
+        Нет активной кампании.
       </p>
     </div>
     
-    <div class="side-menu right">
-      <button class="side-btn" @click="goToMissions">
-        <span class="side-icon">🎯</span>
-        <span class="side-label">Missions</span>
-      </button>
-      <button class="side-btn" @click="goToCharacter">
-        <span class="side-icon">🧍</span>
-        <span class="side-label">Character</span>
-      </button>
-    </div>
-    
-    <div class="bottom-nav">
-      <button class="nav-btn" @click="goToCharacter">
-        <span class="nav-icon">🧍</span>
-        <span>Персонаж</span>
-      </button>
-      <button class="nav-btn" @click="goToCampaignMap" :disabled="!activeCampaign">
-        <span class="nav-icon">🗺️</span>
-        <span>Кампания</span>
-      </button>
-      <button class="nav-btn" @click="goToDashboard">
-        <span class="nav-icon">📊</span>
-        <span>Дашборд</span>
-      </button>
-    </div>
-    
-    <div class="loading" v-if="!playerStore.isLoaded">
+    <div class="loading" v-else>
       <p>Загрузка профиля...</p>
     </div>
   </div>
@@ -140,12 +103,6 @@ const startCampaign = () => {
   }
 };
 
-const goToDashboard = () => router.push('/dashboard');
-const goToBuilder = () => activeCampaign.value ? router.push(`/campaign/${activeCampaign.value.id}`) : router.push('/dashboard');
-const goToMissions = () => router.push('/dashboard');
-const goToCharacter = () => currentCharacter.value ? router.push(`/character/${currentCharacter.value.id}`) : router.push('/dashboard');
-const goToCampaignMap = () => activeCampaign.value ? router.push(`/campaign/${activeCampaign.value.id}/play`) : null;
-
 onMounted(async () => {
   try {
     await playerStore.fetchPlayer(DEMO_PLAYER_ID);
@@ -173,19 +130,14 @@ onMounted(async () => {
   min-height: 100vh;
   background: linear-gradient(180deg, #1a3d1a 0%, #0f2a0f 100%);
   color: #f4e4a4;
-  display: grid;
-  grid-template-rows: auto 1fr auto;
-  grid-template-columns: 80px 1fr 80px;
-  grid-template-areas:
-    "top top top"
-    "left main right"
-    "bottom bottom bottom";
+  display: flex;
+  flex-direction: column;
   padding: 20px;
   gap: 16px;
 }
 
 .top-bar {
-  grid-area: top;
+  flex: 0 0 auto;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -222,35 +174,8 @@ onMounted(async () => {
 .resource-icon { font-size: 1.1rem; }
 .resource-value { font-weight: bold; }
 
-.side-menu {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  align-self: start;
-  margin-top: 40px;
-}
-
-.side-menu.left { grid-area: left; }
-.side-menu.right { grid-area: right; align-items: flex-end; }
-
-.side-btn {
-  width: 64px;
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
-  background: rgba(74, 60, 42, 0.5);
-  border: 2px solid #8b7355;
-  border-radius: 14px;
-  padding: 12px 4px;
-  color: #f4e4a4;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.side-btn:hover { border-color: #c9a227; transform: translateY(-2px); }
-
-.side-icon { font-size: 1.4rem; }
-.side-label { font-size: 0.65rem; text-align: center; }
-
 .main-stage {
-  grid-area: main;
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -311,49 +236,16 @@ onMounted(async () => {
 
 .no-campaign { color: #8b7355; font-size: 0.9rem; }
 
-.bottom-nav {
-  grid-area: bottom;
+.loading {
+  flex: 1;
   display: flex;
+  align-items: center;
   justify-content: center;
-  gap: 12px;
-  background: rgba(0,0,0,0.3);
-  border: 2px solid #8b7355;
-  border-radius: 16px;
-  padding: 12px;
-}
-
-.nav-btn {
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
-  background: rgba(74, 60, 42, 0.5);
-  border: 2px solid #8b7355;
-  border-radius: 12px;
-  padding: 10px 20px;
-  color: #f4e4a4;
-  cursor: pointer;
-  transition: all 0.2s;
-  min-width: 80px;
-}
-.nav-btn:hover:not(:disabled) { border-color: #c9a227; }
-.nav-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.nav-icon { font-size: 1.3rem; }
-
-.loading { 
-  grid-area: main; 
-  display: flex; 
-  align-items: center; 
-  justify-content: center; 
-  color: #8b7355; 
+  color: #8b7355;
 }
 
 @media (max-width: 768px) {
-  .main-screen {
-    grid-template-columns: 1fr;
-    grid-template-areas:
-      "top"
-      "main"
-      "bottom";
-  }
-  .side-menu { display: none; }
   .character-avatar { width: 120px; height: 120px; font-size: 3.5rem; }
+  .start-button { min-width: 200px; padding: 18px 40px; font-size: 1.4rem; }
 }
 </style>
